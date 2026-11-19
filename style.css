@@ -277,5 +277,36 @@ textarea { width: 100%; min-height: 80px; font: inherit; }
   main.wide .result, main.wide .hintbox, main.wide .card { margin: 4px 0; padding: 8px 12px; }
   main.wide .result h3 { font-size: 1rem; }
   main.wide .stepbar { margin: 2px 0 0; }
-  main.wide #flt .filters { margin: 4px 0 0; padding: 6px 12px; }
+}
+
+/* 標題列右側、圖示按鈕、篩選面板 */
+.tright { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 500; }
+.tright .due { opacity: .85; }
+.iconbtn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px;
+  background: transparent; color: inherit; cursor: pointer; touch-action: manipulation;
+}
+.iconbtn:active { background: rgba(255, 255, 255, .15); }
+.iconbtn .badge { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: #f5c542; }
+svg.i { width: 20px; height: 20px; flex: none; }
+.btn.icon { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; padding-left: 0; padding-right: 0; }
+#l-play { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#l-play svg.i { width: 16px; height: 16px; }
+.sheet-scrim {
+  position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .4);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  width: 100%; max-width: 560px; box-sizing: border-box;
+  background: var(--surface); color: var(--text, inherit);
+  border-radius: 16px 16px 0 0; padding: 8px 16px calc(12px + env(safe-area-inset-bottom));
+  animation: sheet-up .18s ease-out;
+}
+.sheet-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.sheet-head b { font-size: 1.05rem; }
+@keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (min-width: 900px) {
+  .sheet-scrim { align-items: center; }
+  .sheet { border-radius: 16px; max-width: 420px; }
 }

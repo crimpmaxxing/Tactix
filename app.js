@@ -4,7 +4,7 @@ import { Board, renderBoard } from './board.js';
 import * as audio from './audio.js';
 import * as T from './trainer.js';
 
-export const APP_VERSION = '2.0.3'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.0.4'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -183,8 +183,20 @@ async function loadData() {
   } catch (e) { state.openings = null; }
 }
 
-function setTitle(text, back) {
-  $title.innerHTML = (back ? `<a class="back" href="${esc(back)}" aria-label="返回">‹</a>` : '') + esc(text) + (MOCK ? ' <small>（測試資料）</small>' : '');
+const SVG = (d, extra = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
+const ICON = {
+  filter: SVG('<path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/>'),
+  close: SVG('<path d="M6 6l12 12"/><path d="M18 6L6 18"/>'),
+  first: SVG('<path d="M6 5v14"/><path d="M18 6l-7 6 7 6"/>'),
+  prev: SVG('<path d="M15 6l-6 6 6 6"/>'),
+  next: SVG('<path d="M9 6l6 6-6 6"/>'),
+  play: SVG('<path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none"/>'),
+};
+
+// right：標題列右邊的額外內容（HTML）
+function setTitle(text, back, right = '') {
+  $title.innerHTML = (back ? `<a class="back" href="${esc(back)}" aria-label="返回">‹</a>` : '') + esc(text) + (MOCK ? ' <small>（測試資料）</small>' : '')
+    + (right ? `<span class="tright">${right}</span>` : '');
 }
 
 function dueCount() {
@@ -206,6 +218,7 @@ window.addEventListener('orientationchange', () => setTimeout(updateFitH, 200));
 
 function route() {
   stopTimer();
+  closeSheet();
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'overview';
   document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === page));
@@ -446,17 +459,61 @@ function nextDueText() {
   return `下一題最快 ${days} 天後到期。`;
 }
 
+function filterOn() {
+  const f = state.filter;
+  return !!(f.category || f.opening || f.openingOnly);
+}
+
+function closeSheet() {
+  document.querySelectorAll('.sheet-scrim').forEach(x => x.remove());
+}
+
+// 篩選面板：從底部滑出，點背景、×、完成都會關
+function openFilter() {
+  closeSheet();
+  const scrim = document.createElement('div');
+  scrim.className = 'sheet-scrim';
+  scrim.innerHTML = `<div class="sheet" role="dialog" aria-label="篩選題目">
+    <div class="sheet-head"><b>篩選題目</b><button class="iconbtn" id="f-x" aria-label="關閉">${ICON.close}</button></div>
+    ${filterBlock()}
+    <div class="btns"><button class="btn grow" id="f-reset">清除篩選</button><button class="btn primary grow" id="f-done">完成</button></div>
+  </div>`;
+  document.body.appendChild(scrim);
+  const cat = scrim.querySelector('#f-cat'), op = scrim.querySelector('#f-op'), oo = scrim.querySelector('#f-open');
+  scrim.addEventListener('click', e => { if (e.target === scrim) closeSheet(); });
+  scrim.querySelector('#f-x').addEventListener('click', closeSheet);
+  scrim.querySelector('#f-reset').addEventListener('click', () => { cat.value = ''; op.value = ''; oo.checked = false; });
+  scrim.querySelector('#f-done').addEventListener('click', () => {
+    const nf = { category: cat.value, opening: op.value, openingOnly: oo.checked };
+    const f = state.filter;
+    closeSheet();
+    if (nf.category === f.category && nf.opening === f.opening && nf.openingOnly === !!f.openingOnly) return;
+    state.filter = nf;
+    state.extra = false;
+    state.cur = null;
+    state.forced = [];
+    pagePractice();
+  });
+}
+
+function practiceTitle() {
+  const n = dueCount();
+  setTitle('練習', null, `<span class="due">今天 ${n} 題${state.forced.length ? '＋指定' : ''}</span>`
+    + `<button class="iconbtn" id="fbtn" aria-label="篩選">${ICON.filter}${filterOn() ? '<i class="badge"></i>' : ''}</button>`);
+  const b = document.getElementById('fbtn');
+  if (b) b.addEventListener('click', openFilter);
+}
+
 function filterBlock() {
   const ops = [...new Set(state.puzzles.map(p => p.opening).filter(Boolean))].sort();
   const f = state.filter;
-  const on = f.category || f.opening || f.openingOnly;
-  return `<details class="card filters"${on ? ' open' : ''}><summary>篩選${on ? '（已設定）' : ''}</summary>
+  return `<div class="filters">
     <label for="f-cat">漏著類別</label>
     <select id="f-cat"><option value="">全部</option>${Object.entries(CAT).map(([k, v]) => `<option value="${k}"${f.category === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
     <label for="f-op">開局</label>
     <select id="f-op"><option value="">全部</option>${ops.map(o => `<option value="${esc(o)}"${f.opening === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>
     <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看開局階段（前 10 手）</label>
-  </details>`;
+  </div>`;
 }
 
 function pagePractice() {
@@ -475,18 +532,8 @@ function pagePractice() {
   }
   $view.innerHTML = `<div class="split" id="split">
     <div class="split-board" id="bcol"></div>
-    <div class="split-info"><div id="pz"></div><div id="flt">${filterBlock()}</div></div></div>`;
-  const cat = document.getElementById('f-cat'), op = document.getElementById('f-op'), oo = document.getElementById('f-open');
-  const changed = () => {
-    state.filter = { category: cat.value, opening: op.value, openingOnly: oo.checked };
-    state.extra = false;
-    state.cur = null;
-    state.forced = [];
-    pagePractice();
-  };
-  cat.addEventListener('change', changed);
-  op.addEventListener('change', changed);
-  oo.addEventListener('change', changed);
+    <div class="split-info"><div id="pz"></div></div></div>`;
+  practiceTitle();
   if (!state.cur) nextPuzzle(); else drawPuzzle();
 }
 
@@ -578,14 +625,12 @@ function moveLabel(p, san) {
 function drawPuzzle() {
   const c = state.cur;
   const p = c.puzzle;
-  const dueN = dueCount();
   document.getElementById('split').classList.remove('solo');
   document.getElementById('bcol').innerHTML = `
     <div class="turn"><span class="dotc ${p.color === 'black' ? 'b' : 'w'}"></span><span>輪到你走（${p.color === 'black' ? '黑方' : '白方'}），找出更好的一步</span></div>
     <div id="board" class="board-wrap"></div>`;
-  document.getElementById('pz').innerHTML = `
-    <div id="panel"></div>
-    <p class="small muted">今天到期 ${dueN} 題${state.forced.length ? '（含指定題目）' : ''}</p>`;
+  document.getElementById('pz').innerHTML = `<div id="panel"></div>`;
+  practiceTitle();
   state.board = new Board(document.getElementById('board'));
   if (c.intro && c.idx === 0 && !c.done) {
     // 先擺出對手走之前的局面，再把對手那一步滑過去
@@ -800,10 +845,17 @@ function puzzleRight(c, mv, kind) {
   updatePanel(c, true);
   let t = 650;
   if (kind === 'alt') {
-    // 走的不是最佳著：收回，改走最佳著，讓後面的局面對得上
-    later(c, t, () => { rewind(c); updateBoard(c); });
-    later(c, t + 120, () => playMove(c, q.best));
-    t += 120 + 700;
+    // 走的不是最佳著：先讓使用者看清楚自己的走法，再把棋子滑回去、改走最佳著，後面的局面才對得上
+    c.msg = { kind: 'ok', title: '也可以！', text: `最佳是 ${q.best}。接下來照 ${q.best} 的局面繼續。` };
+    updatePanel(c);
+    t = 1400;
+    later(c, t, () => {
+      rewind(c);
+      c.last = { from: mv.to, to: mv.from };
+      updateBoard(c, { animate: true });
+    });
+    later(c, t + 450, () => playMove(c, q.best));
+    t += 450 + 750;
   }
   if (q.reply) later(c, t, () => playMove(c, q.reply));
   later(c, t + 700, () => startStep(c, c.idx + 1));
@@ -858,12 +910,12 @@ function puzzlePanel(c) {
   const hasLine = c.lineFens && c.lineFens.length > 1;
   const idx = c.lineIdx;
   const link = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">在 chess.com 看這盤</a>` : '';
-  const title = ok ? (c.qs.length > 1 ? '全部答對了' : '答對了') : '這題做完了';
+  const title = ok ? (c.qs.length > 1 ? '全部答對了' : '答對了') : '完成了';
   el.innerHTML = `
-    <div class="result ${ok ? 'ok' : 'bad'}">
+    <div class="result ${ok ? 'ok' : 'info'}">
       <h3>${title}</h3>
       ${c.msg && c.msg.title === '也可以！' ? `<div><b>也可以！</b>${esc(c.msg.text)}</div>` : ''}
-      ${!ok ? '<div>中間有答錯或看答案。</div>' : ''}
+      ${!ok ? '<div>中間有答錯或看答案，這題之後會再出現。</div>' : ''}
       ${p.played_san ? `<div>實戰你走的：<b>${esc(moveLabel(p, p.played_san))}</b></div>` : ''}
       <div>最佳著：<b>${esc(p.best_san)}</b>${p.accept_san.length > 1 ? `（也可以：${esc(p.accept_san.filter(x => norm(x) !== norm(p.best_san)).join('、'))}）` : ''}</div>
       ${p.explanation ? `<p>${esc(p.explanation)}</p>` : ''}
@@ -871,14 +923,15 @@ function puzzlePanel(c) {
       <div class="small muted" style="margin-top:6px">${esc(recText(c.rec))}${c.retried ? '（重試不計分）' : ''}</div>
       ${link}
     </div>
-    ${hasLine ? `<div class="card"><b>最佳主變</b>
+    ${hasLine ? `<div class="card"><b>正確下法示範</b>
+      <div class="small muted">照最佳著走下去，局面接下來會這樣發展。用下方按鈕一步一步看。</div>
       <div class="line">${fmtLine(p, idx)}</div></div>` : ''}
     <div class="actions">
       ${hasLine ? `<div class="btns">
-        <button class="btn" id="l-first" aria-label="回到起點">⏮</button>
-        <button class="btn" id="l-prev" aria-label="上一步">◀</button>
-        <button class="btn" id="l-next" aria-label="下一步">▶</button>
-        <button class="btn grow" id="l-play">播放主變</button>
+        <button class="btn icon" id="l-first" aria-label="回到題目局面">${ICON.first}</button>
+        <button class="btn icon" id="l-prev" aria-label="上一步">${ICON.prev}</button>
+        <button class="btn icon" id="l-next" aria-label="下一步">${ICON.next}</button>
+        <button class="btn grow" id="l-play">${ICON.play}自動播放</button>
       </div>` : ''}
       <div class="btns">
         ${!ok ? '<button class="btn grow" id="retry">重試這題</button>' : ''}
