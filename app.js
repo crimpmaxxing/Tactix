@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.6.3'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.6.4'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
