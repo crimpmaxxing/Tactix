@@ -1,0 +1,1252 @@
+import { Chess } from './vendor/chess.js';
+import * as store from './store.js';
+import { Board, renderBoard } from './board.js';
+import * as audio from './audio.js';
+import * as T from './trainer.js';
+
+export const APP_VERSION = '2.0.1'; // 與 sw.js 的 VERSION 一起改
+
+// ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
+const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
+const DATA_DIR = MOCK ? 'data/mock/' : 'data/';
+if (MOCK) store.setNamespace('mock');
+
+const CAT = {
+  hanging: '掉子',
+  missed_threat: '沒看到對方威脅',
+  missed_tactic: '錯過自己的機會',
+  endgame: '殘局技術',
+  other: '其他',
+};
+const PHASE = { opening: '開局', middlegame: '中局', endgame: '殘局' };
+const TAG = { time_pressure: '時間壓力', opening: '開局階段' };
+
+const ZH_OPENING = {
+  'Sicilian Defense': '西西里防禦',
+  'French Defense': '法蘭西防禦',
+  'Caro Kann Defense': '卡羅卡恩防禦',
+  'Scandinavian Defense': '斯堪的納維亞防禦',
+  'Italian Game': '義大利開局',
+  'London System': '倫敦體系',
+  'Scotch Game': '蘇格蘭開局',
+  'Kings Gambit': '國王棄兵',
+  'Queens Gambit Declined': '后翼棄兵（拒絕）',
+  'Queens Gambit': '后翼棄兵',
+  'Queens Pawn Opening': '后兵開局',
+  'Kings Pawn Opening': '王兵開局',
+  'Ruy Lopez': '西班牙開局',
+  'English Opening': '英國式開局',
+  'Pirc Defense': '皮爾茲防禦',
+  'Petrovs Defense': '彼得羅夫防禦',
+  'Vienna Game': '維也納開局',
+  'Four Knights Game': '四騎士開局',
+  'Philidor Defense': '菲利多爾防禦',
+  'Alekhine Defense': '阿廖欣防禦',
+  'Modern Defense': '現代防禦',
+  'Slav Defense': '斯拉夫防禦',
+  'Kings Indian Defense': '古印度防禦',
+  'Dutch Defense': '荷蘭防禦',
+  'Bishops Opening': '主教開局',
+};
+
+const $view = document.getElementById('view');
+const $title = document.getElementById('page-title');
+
+const state = {
+  report: null,
+  puzzles: [],
+  skipped: 0,
+  reportError: false,
+  puzzlesError: false,
+  openings: null,   // openings.json 的 repertoires 陣列；讀不到是 null
+  tmos: [],         // 排程中的延遲動作
+  drill: null,      // 「從頭練」目前的練習
+  filter: { category: '', opening: '', openingOnly: false },
+  forced: [],      // 從開局頁指定要練的題目
+  extra: false,    // 今天到期的都做完後，是否繼續練未到期的
+  cur: null,       // 目前這一題的狀態
+  lastId: null,
+  timer: null,
+  board: null,
+};
+
+/* ---------- 小工具 ---------- */
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function pct(x, d = 0) { return Number.isFinite(x) ? x.toFixed(d) + '%' : '—'; }
+function norm(san) { return String(san).replace(/[+#!?]/g, ''); }
+function zhOpening(name) {
+  const n = String(name || '').replace(/-/g, ' ').replace(/'/g, '');
+  let best = '';
+  for (const k of Object.keys(ZH_OPENING)) if (n.startsWith(k) && k.length > best.length) best = k;
+  return best ? ZH_OPENING[best] : '';
+}
+function stopTimer() {
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+  for (const t of state.tmos) clearTimeout(t);
+  state.tmos = [];
+}
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso || '—') : d.toLocaleString('zh-TW', { hour12: false });
+}
+
+async function getJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// 把題目轉成「步驟」。有 steps 用 steps；沒有（舊資料）就用 v1 欄位當單步題。
+function buildSteps(p) {
+  if (Array.isArray(p.steps) && p.steps.length) {
+    try {
+      const out = [];
+      for (const s of p.steps) {
+        if (!s || !s.fen || !s.best) throw new Error('步驟缺欄位');
+        new Chess(s.fen).move(s.best);   // 最佳著必須合法，否則丟例外
+        let accept = Array.isArray(s.accept) && s.accept.length ? s.accept.slice() : [s.best];
+        if (!accept.some(a => norm(a) === norm(s.best))) accept.unshift(s.best);
+        out.push({
+          fen: s.fen, best: s.best, accept,
+          moves: s.moves && typeof s.moves === 'object' ? s.moves : {},
+          why: s.why && typeof s.why === 'object' ? s.why : {},
+          whyReply: s.why_reply && typeof s.why_reply === 'object' ? s.why_reply : {},
+          hint: typeof s.hint === 'string' ? s.hint : '',
+          reply: typeof s.reply === 'string' && s.reply ? s.reply : null,
+        });
+      }
+      return { steps: out, legacy: false };
+    } catch (e) { /* 步驟壞掉就退回舊格式 */ }
+  }
+  return {
+    steps: [{ fen: p.fen, best: p.best_san, accept: p.accept_san.slice(), moves: {}, why: {}, whyReply: {}, hint: '', reply: null }],
+    legacy: true,
+  };
+}
+
+// 驗證並補齊一題；格式不對丟例外。
+function prepPuzzle(p) {
+  if (!p || !p.id || !p.fen || !p.best_san) throw new Error('缺欄位');
+  new Chess(p.fen);
+  p.accept_san = Array.isArray(p.accept_san) && p.accept_san.length ? p.accept_san : [p.best_san];
+  p.best_line_san = Array.isArray(p.best_line_san) && p.best_line_san.length ? p.best_line_san : [p.best_san];
+  p.tags = Array.isArray(p.tags) ? p.tags : [];
+  if (Array.isArray(p.line_san) && p.line_san.length) p.best_line_san = p.line_san;
+  const b = buildSteps(p);
+  p._steps = b.steps;
+  p._legacy = b.legacy;
+  return p;
+}
+
+function prepRepertoire(r) {
+  if (!r || !r.id || !r.name || !r.nodes || typeof r.nodes !== 'object') throw new Error('缺欄位');
+  r.color = r.color === 'black' ? 'black' : 'white';
+  return r;
+}
+
+async function loadData() {
+  try {
+    const r = await getJson('data/report.json');
+    state.report = r && typeof r === 'object' ? r : null;
+    state.reportError = !state.report;
+  } catch (e) { state.report = null; state.reportError = true; }
+  try {
+    const arr = await getJson(DATA_DIR + 'puzzles.json');
+    const ok = [];
+    let bad = 0;
+    for (const p of Array.isArray(arr) ? arr : []) {
+      try { ok.push(prepPuzzle(p)); } catch (e) { bad++; }
+    }
+    state.puzzles = ok;
+    state.skipped = bad;
+    state.puzzlesError = false;
+  } catch (e) { state.puzzles = []; state.puzzlesError = true; }
+  try {
+    const o = await getJson(DATA_DIR + 'openings.json');
+    const reps = [];
+    for (const r of Array.isArray(o?.repertoires) ? o.repertoires : []) {
+      try { reps.push(prepRepertoire(r)); } catch (e) { /* 單套壞掉就略過 */ }
+    }
+    state.openings = reps.length ? reps : null;
+  } catch (e) { state.openings = null; }
+}
+
+function setTitle(text, back) {
+  $title.innerHTML = (back ? `<a class="back" href="${esc(back)}" aria-label="返回">‹</a>` : '') + esc(text) + (MOCK ? ' <small>（測試資料）</small>' : '');
+}
+
+function dueCount() {
+  const now = Date.now();
+  return state.puzzles.filter(p => store.isDue(p.id, now)).length;
+}
+
+/* ---------- 路由 ---------- */
+
+function route() {
+  stopTimer();
+  const parts = location.hash.replace(/^#\/?/, '').split('/');
+  const page = parts[0] || 'overview';
+  document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === page));
+  window.scrollTo(0, 0);
+  const isDrill = page === 'openings' && parts[1] === 'drill';
+  if (!isDrill || parts[2] === undefined) state.drill = null;
+  $view.classList.toggle('wide', page === 'practice' || (isDrill && parts[2] !== undefined));
+  try {
+    if (isDrill && parts[2] !== undefined) pageDrill(decodeURIComponent(parts[2]));
+    else if (isDrill) pageDrillList();
+    else if (page === 'openings' && parts[1] !== undefined) pageOpeningDetail(Number(parts[1]));
+    else if (page === 'openings') pageOpenings();
+    else if (page === 'practice') pagePractice();
+    else if (page === 'settings') pageSettings();
+    else pageOverview();
+  } catch (e) {
+    setTitle('Tactix');
+    $view.innerHTML = `<div class="card"><p>頁面出了問題，請回到總覽再試一次。</p><a class="btn" href="#/overview">回總覽</a></div>`;
+    console.error(e);
+  }
+}
+
+/* ---------- 總覽 ---------- */
+
+function noData(what) {
+  return `<div class="card empty"><p>讀不到${esc(what)}。</p><p class="muted small">請先在電腦執行 analyze.py，或連上網路後重新開啟。</p></div>`;
+}
+
+function sparkline(hist) {
+  const pts = (hist || []).filter(h => h && Number.isFinite(h.rating) && h.date);
+  if (pts.length < 2) return '';
+  const W = 320, H = 90, P = 6;
+  const ts = pts.map(p => new Date(p.date).getTime());
+  const t0 = Math.min(...ts), t1 = Math.max(...ts);
+  const rs = pts.map(p => p.rating);
+  const r0 = Math.min(...rs) - 10, r1 = Math.max(...rs) + 10;
+  const X = t => P + (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0)) * (W - 2 * P);
+  const Y = r => H - P - (r - r0) / (r1 - r0) * (H - 2 * P);
+  const line = (tc, color) => {
+    const a = pts.filter(p => p.time_class === tc);
+    if (a.length < 2) return '';
+    const d = a.map(p => `${X(new Date(p.date).getTime()).toFixed(1)},${Y(p.rating).toFixed(1)}`).join(' ');
+    return `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${d}"/>`;
+  };
+  const last = tc => { const a = pts.filter(p => p.time_class === tc); return a.length ? a[a.length - 1].rating : null; };
+  const lb = last('blitz'), lr = last('rapid');
+  return `<div class="card"><h3>等級分變化</h3>
+    <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="等級分折線圖">
+      ${line('blitz', 'var(--accent)')}${line('rapid', 'var(--warn)')}</svg>
+    <div class="small muted"><span style="color:var(--accent)">━</span> 快棋 ${lb ?? '—'}　<span style="color:var(--warn)">━</span> 中速棋 ${lr ?? '—'}</div></div>`;
+}
+
+function barRows(obj, labels, total) {
+  const vals = Object.keys(labels).map(k => [k, Number(obj?.[k]) || 0]);
+  const max = Math.max(1, ...vals.map(v => v[1]));
+  return vals.map(([k, v]) => `<div class="bar-row"><span>${esc(labels[k])}</span>
+    <div class="bar"><i style="width:${(v / max * 100).toFixed(1)}%"></i></div><b>${v}</b></div>`).join('');
+}
+
+function pageOverview() {
+  setTitle('Tactix');
+  const r = state.report;
+  if (!r) { $view.innerHTML = noData('分析報告'); return; }
+  const t = r.totals || {};
+  const g = Number(t.games) || 0;
+  const w = Number(t.win) || 0, d = Number(t.draw) || 0, l = Number(t.loss) || 0;
+  const b = r.blunders || {};
+  const cats = b.by_category || {};
+  const totalB = Object.values(cats).reduce((a, x) => a + (Number(x) || 0), 0);
+  const tp = Number(b.with_time_pressure) || 0;
+  const due = dueCount();
+  $view.innerHTML = `
+    <div class="card">
+      <div class="grid3">
+        <div class="stat"><b>${g}</b><span>總局數</span></div>
+        <div class="stat"><b>${Number(b.per_game ?? 0).toFixed(2)}</b><span>每局平均漏著</span></div>
+        <div class="stat"><b>${totalB ? pct(tp / totalB * 100) : '—'}</b><span>時間壓力占比</span></div>
+      </div>
+      <div class="wdl" role="img" aria-label="勝和負比例">
+        <i class="w" style="width:${g ? w / g * 100 : 0}%"></i><i class="d" style="width:${g ? d / g * 100 : 0}%"></i><i class="l" style="width:${g ? l / g * 100 : 0}%"></i>
+      </div>
+      <div class="small muted">勝 ${w}　和 ${d}　負 ${l}　｜　快棋 ${Number(t.blitz) || 0} 局，中速棋 ${Number(t.rapid) || 0} 局</div>
+    </div>
+    <div class="card">
+      <b>今天要練 ${due} 題</b>
+      <div class="btns"><a class="btn primary" href="#/practice">開始練習</a></div>
+    </div>
+    <div class="card"><h3>漏著原因（共 ${totalB} 次）</h3>${barRows(cats, CAT)}</div>
+    <div class="card"><h3>漏著發生階段</h3>${barRows(b.by_phase, PHASE)}
+      <p class="small muted">有時間壓力的漏著：${tp} 次（${totalB ? pct(tp / totalB * 100) : '—'}）。</p></div>
+    ${sparkline(r.rating_history)}
+    <p class="small muted">資料產生時間：${esc(fmtDate(r.generated))}</p>`;
+}
+
+/* ---------- 開局 ---------- */
+
+function openingRow(o, idx) {
+  const zh = zhOpening(o.family || o.name);
+  return `<a class="row chev" href="#/openings/${idx}">
+    <div class="l"><div>${esc(o.name)}</div>${zh ? `<div class="small muted">${esc(zh)}</div>` : ''}</div>
+    <div class="r"><b>得分率 ${pct((Number(o.score) || 0) * 100)}</b><div>${Number(o.games) || 0} 局 · 第10回合勝率 ${o.avg_wp_after_move10 == null ? '—' : pct(Number(o.avg_wp_after_move10))}</div></div></a>`;
+}
+
+function colorSection(title, list) {
+  const big = list.filter(x => (Number(x.o.games) || 0) >= 3).sort((a, b) => b.o.games - a.o.games);
+  const small = list.filter(x => (Number(x.o.games) || 0) < 3).sort((a, b) => b.o.games - a.o.games);
+  let h = `<h2>${esc(title)}</h2>`;
+  if (!list.length) return h + '<p class="muted">沒有資料。</p>';
+  h += big.map(x => openingRow(x.o, x.i)).join('');
+  if (small.length) {
+    const g = small.reduce((a, x) => a + x.o.games, 0);
+    const sc = small.reduce((a, x) => a + (Number(x.o.score) || 0) * x.o.games, 0) / g;
+    h += `<details class="other"><summary><span>其他（${small.length} 種，不足 3 局）</span><span class="small muted">${g} 局 · 得分率 ${pct(sc * 100)}</span></summary>
+      ${small.map(x => openingRow(x.o, x.i)).join('')}</details>`;
+  }
+  return h;
+}
+
+function pageOpenings() {
+  setTitle('開局');
+  const r = state.report;
+  const entry = `<a class="row chev" href="#/openings/drill">
+    <div class="l"><div>從頭練</div><div class="small muted">從第一步開始，練一整套開局</div></div></a>`;
+  if (!r || !Array.isArray(r.openings)) { $view.innerHTML = entry + noData('開局資料'); return; }
+  const all = r.openings.map((o, i) => ({ o, i }));
+  $view.innerHTML = entry + colorSection('執白', all.filter(x => x.o.color === 'white')) +
+    colorSection('執黑', all.filter(x => x.o.color === 'black'));
+}
+
+function mistakePuzzle(o, m) {
+  const g = new Chess(m.fen);
+  const key = String(m.fen).split(' ').slice(0, 4).join(' ');
+  return prepPuzzle({
+    id: `om:${key}|${m.better_san}`,
+    fen: m.fen,
+    color: g.turn() === 'w' ? 'white' : 'black',
+    played_san: m.san,
+    best_san: m.better_san,
+    best_line_san: [m.better_san],
+    accept_san: [m.better_san],
+    category: null,
+    tags: [],
+    explanation: `你在第 ${m.move_no} 手常走 ${m.san}，已出現 ${m.count} 次。更好的是 ${m.better_san}。`,
+    move_no: m.move_no,
+    opening: o.name,
+  });
+}
+
+function pageOpeningDetail(idx) {
+  const o = state.report?.openings?.[idx];
+  if (!o) { setTitle('開局', '#/openings'); $view.innerHTML = noData('這個開局'); return; }
+  setTitle('開局', '#/openings');
+  const g = Number(o.games) || 0, w = Number(o.win) || 0, d = Number(o.draw) || 0, l = Number(o.loss) || 0;
+  const related = state.puzzles.filter(p => p.opening === o.name).length;
+  const zh = zhOpening(o.family || o.name);
+  const ms = Array.isArray(o.common_mistakes) ? o.common_mistakes : [];
+  $view.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0">${esc(o.name)}</h3>
+      <div class="small muted">${zh ? esc(zh) + '　' : ''}${o.color === 'white' ? '執白' : '執黑'}</div>
+      <div class="grid3" style="margin-top:8px">
+        <div class="stat"><b>${g}</b><span>局數</span></div>
+        <div class="stat"><b>${pct((Number(o.score) || 0) * 100)}</b><span>得分率</span></div>
+        <div class="stat"><b>${o.avg_wp_after_move10 == null ? '—' : pct(Number(o.avg_wp_after_move10))}</b><span>第10回合勝率</span></div>
+      </div>
+      <div class="wdl"><i class="w" style="width:${g ? w / g * 100 : 0}%"></i><i class="d" style="width:${g ? d / g * 100 : 0}%"></i><i class="l" style="width:${g ? l / g * 100 : 0}%"></i></div>
+      <div class="small muted">勝 ${w}　和 ${d}　負 ${l}${o.first_blunder_move_avg ? `　｜　第一個漏著平均在第 ${Number(o.first_blunder_move_avg).toFixed(1)} 手` : ''}</div>
+      ${related ? `<div class="btns"><button class="btn primary grow" id="pr-all">練習這個開局的 ${related} 題</button></div>` : ''}
+    </div>
+    <h2>常犯錯誤</h2>
+    ${ms.length ? '' : '<p class="muted">還沒有重複出現的錯誤。</p>'}
+    <div id="ms"></div>`;
+  const box = document.getElementById('ms');
+  ms.forEach((m, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="board-slot"></div>
+      <p>第 ${Number(m.move_no)} 手，你常走 <b>${esc(m.san)}</b>，更好的是 <b>${esc(m.better_san)}</b>。<br><span class="small muted">共出現 ${Number(m.count)} 次</span></p>
+      <div class="btns"><button class="btn primary grow">練習這一題</button></div>`;
+    box.appendChild(card);
+    try {
+      renderBoard(card.querySelector('.board-slot'), { fen: m.fen, orientation: o.color, mini: true });
+    } catch (e) { /* 單張圖失敗不影響整頁 */ }
+    card.querySelector('button').addEventListener('click', () => {
+      try {
+        state.forced = [mistakePuzzle(o, m)];
+        location.hash = '#/practice';
+      } catch (e) { alert('這個局面讀不出來。'); }
+    });
+  });
+  const all = document.getElementById('pr-all');
+  if (all) all.addEventListener('click', () => {
+    state.filter = { category: '', opening: o.name, openingOnly: false };
+    state.extra = false;
+    state.forced = [];
+    state.cur = null;
+    location.hash = '#/practice';
+  });
+}
+
+/* ---------- 練習 ---------- */
+
+function filtered() {
+  const f = state.filter;
+  return state.puzzles.filter(p =>
+    (!f.category || p.category === f.category) &&
+    (!f.opening || p.opening === f.opening) &&
+    (!f.openingOnly || p.tags.includes('opening') || Number(p.move_no) <= 10));
+}
+
+function pickNext() {
+  if (state.forced.length) return state.forced.shift();
+  const now = Date.now();
+  const pool = filtered();
+  const rank = p => store.get(p.id)?.due ?? 0;
+  let cand = pool.filter(p => store.isDue(p.id, now));
+  if (!cand.length && state.extra) cand = pool.slice();
+  if (!cand.length) return null;
+  const rnd = new Map(cand.map(p => [p.id, Math.random()]));
+  // 已練過且到期的先出，再來沒做過的；同樣的隨機
+  cand.sort((a, b) => {
+    const sa = store.get(a.id) ? 0 : 1, sb = store.get(b.id) ? 0 : 1;
+    if (sa !== sb) return sa - sb;
+    if (sa === 0 && rank(a) !== rank(b)) return rank(a) - rank(b);
+    return rnd.get(a.id) - rnd.get(b.id);
+  });
+  return cand.find(p => p.id !== state.lastId) || cand[0];
+}
+
+function nextDueText() {
+  const pool = filtered();
+  const ts = pool.map(p => store.get(p.id)?.due).filter(x => x > Date.now());
+  if (!ts.length) return '';
+  const days = Math.max(1, Math.ceil((Math.min(...ts) - Date.now()) / 86400000));
+  return `下一題最快 ${days} 天後到期。`;
+}
+
+function filterBlock() {
+  const ops = [...new Set(state.puzzles.map(p => p.opening).filter(Boolean))].sort();
+  const f = state.filter;
+  const on = f.category || f.opening || f.openingOnly;
+  return `<details class="card filters"${on ? ' open' : ''}><summary>篩選${on ? '（已設定）' : ''}</summary>
+    <label for="f-cat">漏著類別</label>
+    <select id="f-cat"><option value="">全部</option>${Object.entries(CAT).map(([k, v]) => `<option value="${k}"${f.category === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
+    <label for="f-op">開局</label>
+    <select id="f-op"><option value="">全部</option>${ops.map(o => `<option value="${esc(o)}"${f.opening === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>
+    <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看開局階段（前 10 手）</label>
+  </details>`;
+}
+
+function pagePractice() {
+  setTitle('練習');
+  if (state.puzzlesError) { $view.innerHTML = noData('題目'); return; }
+  if (!state.puzzles.length && !state.forced.length) {
+    $view.innerHTML = noData('題目（目前沒有題目）');
+    return;
+  }
+  const c = state.cur;
+  if (c && !c.done && !state.forced.length) {
+    // 回到練習頁時沿用同一題；若剛好在動畫中被打斷，退回這一步的起點
+    if (c.busy) { rewind(c); c.busy = false; c.status = ''; c.msg = null; c.hl = hintSquares(c); }
+  } else {
+    state.cur = null;
+  }
+  $view.innerHTML = `<div class="split" id="split">
+    <div class="split-board" id="bcol"></div>
+    <div class="split-info"><div id="pz"></div><div id="flt">${filterBlock()}</div></div></div>`;
+  const cat = document.getElementById('f-cat'), op = document.getElementById('f-op'), oo = document.getElementById('f-open');
+  const changed = () => {
+    state.filter = { category: cat.value, opening: op.value, openingOnly: oo.checked };
+    state.extra = false;
+    state.cur = null;
+    state.forced = [];
+    pagePractice();
+  };
+  cat.addEventListener('change', changed);
+  op.addEventListener('change', changed);
+  oo.addEventListener('change', changed);
+  if (!state.cur) nextPuzzle(); else drawPuzzle();
+}
+
+function nextPuzzle() {
+  stopTimer();
+  const p = pickNext();
+  const host = document.getElementById('pz');
+  const split = document.getElementById('split');
+  if (!p) {
+    state.cur = null;
+    state.board = null;
+    document.getElementById('bcol').innerHTML = '';
+    split.classList.add('solo');
+    const total = filtered().length;
+    host.innerHTML = `<div class="card empty">
+      <h3>${total ? '今天到期的題目都練完了' : '這個篩選條件下沒有題目'}</h3>
+      <p class="muted">${total ? esc(nextDueText()) : '請放寬篩選條件。'}</p>
+      ${total ? '<div class="btns" style="justify-content:center"><button class="btn primary" id="more">再多練幾題</button></div>' : ''}</div>`;
+    const more = document.getElementById('more');
+    if (more) more.addEventListener('click', () => { state.extra = true; nextPuzzle(); });
+    return;
+  }
+  split.classList.remove('solo');
+  state.lastId = p.id;
+  const qs = p._steps;
+  state.cur = {
+    kind: 'puzzle',
+    puzzle: p,
+    qs,
+    idx: 0,
+    q: qs[0],
+    legacy: p._legacy,
+    orientation: p.color === 'black' ? 'black' : 'white',
+    game: new Chess(qs[0].fen),
+    base: 0,
+    last: null,
+    hl: [],
+    errs: 0,           // 這一步答錯幾次
+    revealed: false,   // 這一步答案是否已經顯示
+    busy: false,       // 動畫進行中，不能走子
+    done: false,
+    status: '',
+    failed: false,     // 整題有沒有答錯／看答案（影響間隔重複）
+    msg: null,
+    rec: null,
+    retried: false,
+    lineIdx: null,
+    lineFens: null,
+    afterRight: puzzleRight,
+  };
+  drawPuzzle();
+}
+
+function lineFens(p) {
+  const g = new Chess(p.fen);
+  const arr = [{ fen: g.fen(), last: null }];
+  for (const s of p.best_line_san) {
+    try {
+      const m = g.move(s);
+      arr.push({ fen: g.fen(), last: { from: m.from, to: m.to } });
+    } catch (e) { break; }
+  }
+  return arr;
+}
+
+function fmtLine(p, cur) {
+  const parts = p.fen.split(' ');
+  let turn = parts[1];
+  let n = parseInt(parts[5], 10) || 1;
+  const out = [];
+  p.best_line_san.forEach((s, i) => {
+    let t;
+    if (turn === 'w') t = `${n}.${s}`;
+    else t = i === 0 ? `${n}…${s}` : s;
+    out.push(`<span class="${cur === i ? 'cur' : ''}">${esc(t)}</span>`);
+    if (turn === 'b') n++;
+    turn = turn === 'w' ? 'b' : 'w';
+  });
+  return out.join(' ');
+}
+
+function moveLabel(p, san) {
+  const n = Number(p.move_no) || 1;
+  return p.color === 'black' ? `${n}…${san}` : `${n}.${san}`;
+}
+
+function drawPuzzle() {
+  const c = state.cur;
+  const p = c.puzzle;
+  const dueN = dueCount();
+  document.getElementById('split').classList.remove('solo');
+  document.getElementById('bcol').innerHTML = `
+    <div class="turn"><span class="dotc ${p.color === 'black' ? 'b' : 'w'}"></span><span>輪到你走（${p.color === 'black' ? '黑方' : '白方'}），找出更好的一步</span></div>
+    <div id="board" class="board-wrap"></div>`;
+  document.getElementById('pz').innerHTML = `
+    <div id="panel"></div>
+    <p class="small muted">今天到期 ${dueN} 題${state.forced.length ? '（含指定題目）' : ''}</p>`;
+  state.board = new Board(document.getElementById('board'));
+  updateBoard(c);
+  updatePanel(c);
+}
+
+/* ---------- 出題共用流程（練習題與「從頭練」都用）----------
+   s 是一場練習，必備欄位：
+   kind, q（目前的問題）, game, base（這題起點的步數）, last, hl, errs, revealed,
+   busy, done, status, failed, msg, orientation, afterRight(s, mv, kind) */
+
+const DEFAULT_HINT = '先看看對方有什麼威脅，再找有沒有吃子或將軍的機會。';
+
+function alive(s) {
+  return (state.cur === s || state.drill === s) && !!state.board && document.body.contains(state.board.host);
+}
+
+// 排程一個動作；離開頁面時 stopTimer 會全部取消
+function later(s, ms, fn) {
+  state.tmos.push(setTimeout(() => { if (alive(s)) fn(); }, ms));
+}
+
+function ensureVisible() {
+  if (window.innerWidth >= 900) return;   // 寬螢幕本來就看得到
+  const el = document.getElementById('panel');
+  if (el && el.scrollIntoView) {
+    try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* 忽略 */ }
+  }
+}
+
+function kingSquare(g, color) {
+  for (const row of g.board()) {
+    for (const x of row) if (x && x.type === 'k' && x.color === color) return x.square;
+  }
+  return null;
+}
+
+// o.animate：這次更新要不要讓棋子滑過去
+function updateBoard(s, o = {}) {
+  if (!s || !state.board) return;
+  let fen = s.game.fen(), last = s.last;
+  if (s.lineIdx != null && s.lineFens) {
+    const x = s.lineFens[s.lineIdx];
+    fen = x.fen; last = x.last;
+  }
+  let check = null;
+  try {
+    const g = new Chess(fen);
+    if (g.inCheck()) check = kingSquare(g, g.turn());
+  } catch (e) { check = null; }
+  state.board.set({
+    fen,
+    orientation: s.orientation,
+    last,
+    check,
+    hl: s.hl,
+    status: s.status,
+    interactive: !!s.q && !s.busy && !s.done,
+    turn: s.game.turn(),
+    legal: sq => s.game.moves({ square: sq, verbose: true }),
+    onMove: (from, to, promo) => onUserMove(s, from, to, promo),
+    animate: !!o.animate,
+  });
+}
+
+function playMove(s, san) {
+  try {
+    const r = s.game.move(san);
+    s.last = { from: r.from, to: r.to };
+    audio.play(r.captured ? 'capture' : 'move');
+  } catch (e) { return false; }
+  updateBoard(s, { animate: true });
+  if (s.kind === 'drill') updatePanel(s);   // 走法記錄要跟著更新
+  return true;
+}
+
+// 退回這一題的起點（把這一題之後走的著都收回）
+function rewind(s) {
+  while (s.game.history().length > s.base) s.game.undo();
+  s.last = null;
+}
+
+function recId(s) { return s.kind === 'puzzle' ? s.puzzle.id : s.nodeId; }
+
+// 第一次失誤（答錯、看答案）時，把這題打回第 1 盒
+function markFailed(s) {
+  if (s.failed) return;
+  s.failed = true;
+  if (!s.retried) s.rec = store.record(recId(s), false);
+}
+
+function hintSquares(s) {
+  if (!s.q) return [];
+  const sq = T.bestSquares(s.q);
+  if (!sq) return [];
+  if (s.revealed) return [sq.from, sq.to];
+  if (s.errs >= 2) return [sq.from];
+  return [];
+}
+
+function onUserMove(s, from, to, promo) {
+  if (!s || s.busy || s.done || !s.q) return;
+  let mv;
+  try { mv = s.game.move({ from, to, promotion: promo || 'q' }); } catch (e) { return; }
+  s.last = { from: mv.from, to: mv.to };
+  s.hl = [];
+  audio.play(mv.captured ? 'capture' : 'move');
+  const kind = T.classify(s.q, mv.san);
+  if (kind === 'wrong') wrongMove(s, mv);
+  else rightMove(s, mv, kind);
+}
+
+// 答錯：先讓使用者的棋子走過去，再走出對方的應著，顯示講解，0.8 秒後退回。
+function wrongMove(s, mv) {
+  const q = s.q;
+  s.errs++;
+  markFailed(s);
+  s.busy = true;
+  s.status = 'bad';
+  if (s.errs >= 3) s.revealed = true;     // 第 3 次錯：顯示答案
+  const offBook = s.kind === 'drill' && (q.okAlts || []).some(a => norm(a) === norm(mv.san));
+  let why = s.legacy || offBook ? '' : T.whyText(q, mv.san);
+  if (!why && s.kind === 'drill') why = '這不是這套開局要練的走法。';
+  s.msg = offBook
+    ? { kind: 'bad', title: `${mv.san} 不是這套的主線`, text: '這步本身不差，但這套開局走別步，再想想。' }
+    : { kind: 'bad', title: `${mv.san} 不對`, text: why };
+  const reply = s.legacy || offBook ? null : T.pickReply(q, mv.san, s.game.fen());
+  updateBoard(s, { animate: true });
+  updatePanel(s, true);
+  let t = 800;
+  if (reply) {
+    later(s, 550, () => playMove(s, reply));
+    t = 550 + 800;
+  }
+  later(s, t, () => {
+    rewind(s);
+    s.busy = false;
+    s.status = '';
+    s.hl = hintSquares(s);
+    updateBoard(s);
+    updatePanel(s);
+  });
+}
+
+function rightMove(s, mv, kind) {
+  s.busy = true;
+  s.status = 'ok';
+  s.hl = [];
+  s.msg = kind === 'best'
+    ? { kind: 'ok', title: '答對了', text: '' }
+    : { kind: 'ok', title: '也可以！', text: `最佳是 ${s.q.best}。` };
+  s.afterRight(s, mv, kind);
+}
+
+function giveUp(s) {
+  if (s.busy || s.done || !s.q || s.revealed) return;
+  markFailed(s);
+  s.revealed = true;
+  s.hl = hintSquares(s);
+  s.msg = { kind: 'info', title: '看答案', text: `答案是 ${s.q.best}，請照著走一次。` };
+  updateBoard(s);
+  updatePanel(s, true);
+}
+
+function msgHtml(m) {
+  if (!m) return '';
+  return `<div class="result ${m.kind}"><h3>${esc(m.title)}</h3>${m.text ? `<p>${esc(m.text)}</p>` : ''}</div>`;
+}
+
+// 提示階梯：錯 1 次→文字提示；錯 2 次→標出要動的棋子；錯 3 次或看答案→顯示答案
+function hintHtml(s) {
+  if (!s.q || s.done) return '';
+  const q = s.q;
+  const parts = [];
+  if (s.errs >= 1) parts.push(`<div>提示：${esc(q.hint || DEFAULT_HINT)}</div>`);
+  if (s.revealed) parts.push(`<div>藍框是起點和終點。答案：<b>${esc(q.best)}</b></div>`);
+  else if (s.errs >= 2) parts.push('<div>藍框是要動的那顆棋子。</div>');
+  return parts.length ? `<div class="hintbox">${parts.join('')}</div>` : '';
+}
+
+function recText(rec) {
+  if (!rec) return '';
+  let t;
+  if (rec.box > rec.from) t = `升到第 ${rec.box} 盒，${rec.days} 天後再出現。`;
+  else if (rec.box === rec.from && rec.box === 5) t = `留在第 5 盒，${rec.days} 天後再出現。`;
+  else t = '回到第 1 盒，等一下會再練。';
+  if (!rec.saved) t += '（這台裝置存不了進度。）';
+  return t;
+}
+
+function updatePanel(s, scroll = false) {
+  if (s.kind === 'puzzle') puzzlePanel(s);
+  else drillPanel(s);
+  if (scroll) ensureVisible();
+}
+
+/* ---------- 練習題（多步）---------- */
+
+function puzzleRight(c, mv, kind) {
+  const q = c.q;
+  const next = c.qs[c.idx + 1];
+  if (!next) { finishPuzzle(c); return; }
+  updateBoard(c, { animate: true });
+  updatePanel(c, true);
+  let t = 650;
+  if (kind === 'alt') {
+    // 走的不是最佳著：收回，改走最佳著，讓後面的局面對得上
+    later(c, t, () => { rewind(c); updateBoard(c); });
+    later(c, t + 120, () => playMove(c, q.best));
+    t += 120 + 700;
+  }
+  if (q.reply) later(c, t, () => playMove(c, q.reply));
+  later(c, t + 700, () => startStep(c, c.idx + 1));
+}
+
+function startStep(c, i) {
+  c.idx = i;
+  c.q = c.qs[i];
+  c.game = new Chess(c.q.fen);   // 局面與剛才相同，只是換成新的起點
+  c.base = 0;
+  c.errs = 0;
+  c.revealed = false;
+  c.busy = false;
+  c.status = '';
+  c.hl = [];
+  c.msg = i === 0 ? null : { kind: 'info', title: `第 ${i + 1} 步`, text: '輪到你走。' };
+  updateBoard(c);
+  updatePanel(c, true);
+}
+
+function finishPuzzle(c) {
+  c.done = true;
+  c.busy = false;
+  c.hl = [];
+  c.status = c.failed ? '' : 'ok';
+  if (!c.failed && !c.retried) c.rec = store.record(c.puzzle.id, true);
+  c.lineFens = lineFens(c.puzzle);
+  c.lineIdx = null;
+  updateBoard(c, { animate: true });
+  updatePanel(c, true);
+}
+
+function puzzlePanel(c) {
+  const p = c.puzzle;
+  const el = document.getElementById('panel');
+  if (!el) return;
+  if (!c.done) {
+    const total = c.qs.length;
+    el.innerHTML = `
+      ${total > 1 ? `<div class="stepbar">第 ${c.idx + 1} / ${total} 步</div>` : ''}
+      ${msgHtml(c.msg)}
+      ${hintHtml(c)}
+      <div class="btns"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>看答案</button></div>`;
+    document.getElementById('giveup').addEventListener('click', () => giveUp(c));
+    return;
+  }
+  const ok = !c.failed;
+  const tags = p.tags.map(t => `<span class="pill">${esc(TAG[t] || t)}</span>`).join('');
+  const meta = `${p.category ? `<span class="pill">${esc(CAT[p.category] || p.category)}</span>` : ''}${tags}${p.opening ? `<span class="pill">${esc(p.opening)}</span>` : ''}`;
+  const hasLine = c.lineFens && c.lineFens.length > 1;
+  const idx = c.lineIdx;
+  const link = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">在 chess.com 看這盤</a>` : '';
+  const title = ok ? (c.qs.length > 1 ? '全部答對了' : '答對了') : '這題做完了';
+  el.innerHTML = `
+    <div class="result ${ok ? 'ok' : 'bad'}">
+      <h3>${title}</h3>
+      ${c.msg && c.msg.title === '也可以！' ? `<div><b>也可以！</b>${esc(c.msg.text)}</div>` : ''}
+      ${!ok ? '<div>中間有答錯或看答案。</div>' : ''}
+      ${p.played_san ? `<div>實戰你走的：<b>${esc(moveLabel(p, p.played_san))}</b></div>` : ''}
+      <div>最佳著：<b>${esc(p.best_san)}</b>${p.accept_san.length > 1 ? `（也可以：${esc(p.accept_san.filter(x => norm(x) !== norm(p.best_san)).join('、'))}）` : ''}</div>
+      ${p.explanation ? `<p>${esc(p.explanation)}</p>` : ''}
+      <div>${meta}</div>
+      <div class="small muted" style="margin-top:6px">${esc(recText(c.rec))}${c.retried ? '（重試不計分）' : ''}</div>
+      ${link}
+    </div>
+    ${hasLine ? `<div class="card"><b>最佳主變</b>
+      <div class="line">${fmtLine(p, idx)}</div>
+      <div class="btns">
+        <button class="btn" id="l-first" aria-label="回到起點">⏮</button>
+        <button class="btn" id="l-prev" aria-label="上一步">◀</button>
+        <button class="btn" id="l-next" aria-label="下一步">▶</button>
+        <button class="btn grow" id="l-play">自動播放</button>
+      </div></div>` : ''}
+    <div class="btns">
+      ${!ok ? '<button class="btn grow" id="retry">重試這題</button>' : ''}
+      <button class="btn primary grow" id="next">下一題</button>
+    </div>`;
+  const max = hasLine ? c.lineFens.length - 1 : 0;
+  const go = i => {
+    const prev = c.lineIdx;
+    c.lineIdx = Math.max(0, Math.min(max, i));
+    const fwd = prev != null && c.lineIdx === prev + 1;
+    updateBoard(c, { animate: fwd });
+    if (fwd) audio.play(/x/.test(p.best_line_san[c.lineIdx - 1] || '') ? 'capture' : 'move');
+    updatePanel(c);
+  };
+  if (hasLine) {
+    document.getElementById('l-first').addEventListener('click', () => { stopTimer(); go(0); });
+    document.getElementById('l-prev').addEventListener('click', () => { stopTimer(); go((c.lineIdx ?? 0) - 1); });
+    document.getElementById('l-next').addEventListener('click', () => { stopTimer(); go(c.lineIdx == null ? 0 : c.lineIdx + 1); });
+    document.getElementById('l-play').addEventListener('click', () => {
+      stopTimer();
+      const i = (c.lineIdx === null || c.lineIdx >= max) ? 0 : c.lineIdx;
+      go(i);
+      state.timer = setInterval(() => {
+        if (state.cur !== c || (c.lineIdx ?? 0) >= max) { stopTimer(); return; }
+        go((c.lineIdx ?? 0) + 1);
+      }, 900);
+    });
+  }
+  const retry = document.getElementById('retry');
+  if (retry) retry.addEventListener('click', () => {
+    stopTimer();
+    c.retried = true;
+    c.done = false;
+    c.failed = false;
+    c.lineIdx = null; c.lineFens = null; c.last = null;
+    startStep(c, 0);
+  });
+  document.getElementById('next').addEventListener('click', nextPuzzle);
+}
+
+/* ---------- 從頭練 ---------- */
+
+const NO_OPENINGS = `<div class="card empty"><p>開局資料還沒產生。</p><p class="muted small">請先在電腦執行 build_openings.py。</p></div>`;
+
+function nodeId(rep, key) { return `op:${rep.id}:${key}`; }
+
+function countDue(rep) {
+  let n = 0;
+  for (const [key, node] of Object.entries(rep.nodes)) if (node && node.me && store.isDue(nodeId(rep, key))) n++;
+  return n;
+}
+
+function pageDrillList() {
+  setTitle('從頭練', '#/openings');
+  if (!state.openings) { $view.innerHTML = NO_OPENINGS; return; }
+  $view.innerHTML = `<p class="muted small">選一套開局，從第一步開始練。對方會照真實比例出招，你走錯會有提示。</p>` +
+    state.openings.map(r => {
+      const due = countDue(r);
+      return `<a class="row chev" href="#/openings/drill/${encodeURIComponent(r.id)}">
+        <div class="l"><div>${esc(r.name)}</div><div class="small muted">${esc(r.summary || '')}</div></div>
+        <div class="r"><b>${r.color === 'black' ? '執黑' : '執白'}</b><div>${due} 個局面待複習</div></div></a>`;
+    }).join('');
+}
+
+function pageDrill(id) {
+  setTitle('從頭練', '#/openings/drill');
+  const rep = state.openings && state.openings.find(r => r.id === id);
+  if (!state.openings) { $view.innerHTML = NO_OPENINGS; return; }
+  if (!rep) { $view.innerHTML = `<div class="card empty"><p>找不到這套開局。</p><a class="btn" href="#/openings/drill">回清單</a></div>`; return; }
+  stopTimer();
+  const s = state.drill = {
+    kind: 'drill',
+    rep,
+    orientation: rep.color,
+    game: new Chess(),
+    base: 0,
+    last: null,
+    hl: [],
+    errs: 0,
+    revealed: false,
+    busy: true,
+    done: false,
+    status: '',
+    failed: false,
+    q: null,
+    nodeId: null,
+    msg: null,
+    rec: null,
+    stats: { me: 0, clean: 0 },
+    afterRight: drillRight,
+  };
+  $view.innerHTML = `<div class="split" id="split">
+    <div class="split-board" id="bcol">
+      <div class="turn"><span class="dotc ${rep.color === 'black' ? 'b' : 'w'}"></span><span>你執${rep.color === 'black' ? '黑' : '白'}：${esc(rep.name)}</span></div>
+      <div id="board" class="board-wrap"></div>
+    </div>
+    <div class="split-info"><div id="panel"></div></div></div>`;
+  state.board = new Board(document.getElementById('board'));
+  updateBoard(s);
+  updatePanel(s);
+  later(s, 500, () => drillAdvance(s));
+}
+
+// 這個局面（含）之後的「我方節點」：回傳 [今天到期的個數, 總個數]。用來讓抽線偏向要複習的分支。
+function dueBelow(rep, fen, memo, stack) {
+  const key = T.fen4(fen);
+  if (memo.has(key)) return memo.get(key);
+  if (stack.has(key)) return [0, 0];
+  const node = rep.nodes[key];
+  let due = 0, total = 0;
+  const add = r => { due += r[0]; total += r[1]; };
+  if (node) {
+    stack.add(key);
+    try {
+      if (node.me) {
+        total++;
+        if (store.isDue(nodeId(rep, key))) due++;
+        const g = new Chess(fen);
+        g.move(node.best);
+        add(dueBelow(rep, g.fen(), memo, stack));
+      } else {
+        for (const r of node.replies || []) {
+          try {
+            const g = new Chess(fen);
+            g.move(r[0]);
+            add(dueBelow(rep, g.fen(), memo, stack));
+          } catch (e) { /* 不合法的著法略過 */ }
+        }
+      }
+    } catch (e) { /* 資料有問題的節點當作沒有 */ }
+    stack.delete(key);
+  }
+  const res = [due, total];
+  memo.set(key, res);
+  return res;
+}
+
+function drillQuestion(node, fen) {
+  try {
+    new Chess(fen).move(node.best);
+  } catch (e) { return null; }
+  // 開局練習只認主線；引擎也認可的其他著法放 okAlts，答錯時給不同說明
+  const okAlts = Object.keys(node.accept && typeof node.accept === 'object' ? node.accept : {})
+    .filter(a => norm(a) !== norm(node.best));
+  return {
+    fen, best: node.best, accept: [node.best], okAlts,
+    moves: node.accept || {},
+    why: node.why && typeof node.why === 'object' ? node.why : {},
+    whyReply: node.why_reply && typeof node.why_reply === 'object' ? node.why_reply : {},
+    hint: typeof node.hint === 'string' ? node.hint : '',
+    idea: typeof node.idea === 'string' ? node.idea : '',
+    reply: null,
+  };
+}
+
+// 目前局面該誰決定：輪到我方 → 等使用者；輪到對方 → 依機率出招；沒有節點 → 這條線結束。
+function drillAdvance(s) {
+  const fen = s.game.fen();
+  const key = T.fen4(fen);
+  const node = s.rep.nodes[key];
+  if (!node || s.game.isGameOver()) { endDrill(s); return; }
+  const mine = s.game.turn() === (s.rep.color === 'black' ? 'b' : 'w');
+  if (node.me && mine) {
+    const q = drillQuestion(node, fen);
+    if (!q) { endDrill(s); return; }
+    s.q = q;
+    s.nodeId = nodeId(s.rep, key);
+    s.base = s.game.history().length;
+    s.errs = 0;
+    s.revealed = false;
+    s.failed = false;
+    s.busy = false;
+    s.status = '';
+    s.hl = [];
+    updateBoard(s);
+    updatePanel(s, true);
+    return;
+  }
+  if (!node.me && !mine) {
+    const memo = new Map();
+    const items = [];
+    for (const r of node.replies || []) {
+      try {
+        const g = new Chess(fen);
+        g.move(r[0]);
+        const w = Number(r[1]);
+        if (!(w > 0)) continue;
+        const [due, total] = dueBelow(s.rep, g.fen(), memo, new Set());
+        items.push({ san: r[0], w, due, total });
+      } catch (e) { /* 不合法的著法略過 */ }
+    }
+    // 只有「有的分支要複習、有的分支已經熟了」時才偏向到期的那邊（權重 ×4）；全部到期就照真實比例
+    if (items.some(x => x.due > 0) && items.some(x => x.total > 0 && x.due === 0)) {
+      for (const x of items) if (x.due > 0) x.w *= 4;
+    }
+    const pick = T.pickWeighted(items);
+    if (!pick) { endDrill(s); return; }
+    s.q = null;
+    s.busy = true;
+    updateBoard(s);
+    later(s, 600, () => {
+      playMove(s, pick.san);
+      later(s, 500, () => drillAdvance(s));
+    });
+    return;
+  }
+  endDrill(s);   // 節點的顏色和輪到誰對不上，資料有問題，當作結束
+}
+
+function drillRight(s, mv, kind) {
+  const q = s.q;
+  s.stats.me++;
+  if (!s.failed) {
+    s.stats.clean++;
+    s.rec = store.record(s.nodeId, true);
+  }
+  const text = kind === 'best' ? q.idea : `主線是 ${q.best}${q.idea ? '：' + q.idea : '。'}`;
+  s.msg = { kind: 'ok', title: kind === 'best' ? '答對了' : '也可以！', text };
+  s.q = null;
+  updateBoard(s, { animate: true });
+  updatePanel(s, true);
+  let t = 750;
+  const inTree = !!s.rep.nodes[T.fen4(s.game.fen())];
+  if (kind === 'alt' && !inTree) {
+    // 這個走法不在樹裡：收回，改走主線，才接得上後面的節點
+    later(s, t, () => { rewind(s); updateBoard(s); updatePanel(s); });
+    later(s, t + 120, () => playMove(s, q.best));
+    t += 120 + 700;
+  }
+  later(s, t, () => drillAdvance(s));
+}
+
+function endDrill(s) {
+  s.q = null;
+  s.done = true;
+  s.busy = false;
+  s.status = '';
+  s.hl = [];
+  updateBoard(s);
+  updatePanel(s, true);
+}
+
+function movesText(s) {
+  const out = [];
+  s.game.history().forEach((m, i) => out.push(i % 2 === 0 ? `${i / 2 + 1}.${m}` : m));
+  return out.join(' ') || '（還沒走）';
+}
+
+function drillPanel(s) {
+  const el = document.getElementById('panel');
+  if (!el) return;
+  const list = `<div class="line small movelist">${esc(movesText(s))}</div>`;
+  if (s.done) {
+    const st = s.stats;
+    el.innerHTML = `
+      <div class="result ok"><h3>這條線練完了</h3>
+        <p>你走了 ${st.me} 步，一次就對的有 ${st.clean} 步。</p></div>
+      ${msgHtml(s.msg)}
+      ${list}
+      <div class="btns">
+        <button class="btn primary grow" id="again">再練一次</button>
+        <a class="btn grow" href="#/openings/drill">換一套</a>
+      </div>`;
+    document.getElementById('again').addEventListener('click', () => pageDrill(s.rep.id));
+    return;
+  }
+  el.innerHTML = `
+    ${msgHtml(s.msg)}
+    ${hintHtml(s)}
+    ${list}
+    <div class="btns">
+      <button class="btn grow" id="giveup"${s.busy || s.revealed || !s.q ? ' disabled' : ''}>看答案</button>
+      <button class="btn grow" id="restart">重新開始</button>
+    </div>`;
+  document.getElementById('giveup').addEventListener('click', () => giveUp(s));
+  document.getElementById('restart').addEventListener('click', () => pageDrill(s.rep.id));
+}
+
+/* ---------- 設定 ---------- */
+
+function download(name, text) {
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function pageSettings() {
+  setTitle('設定');
+  const cnt = store.counts();
+  const set = store.getSettings();
+  $view.innerHTML = `
+    <div class="card"><h3 style="margin-top:0">練習進度</h3>
+      <p>已練習 ${cnt.total} 題。各盒題數：${cnt.boxes.map((n, i) => `第${i + 1}盒 ${n}`).join('，')}。</p>
+      <div class="btns">
+        <button class="btn grow" id="exp">匯出進度（JSON 檔）</button>
+        <button class="btn grow" id="cpy">複製進度文字</button>
+      </div>
+      <label class="small muted" for="imp">匯入進度檔（會取代目前進度）</label>
+      <div class="btns"><input type="file" id="imp" accept="application/json,.json"></div>
+      <div class="btns"><button class="btn danger grow" id="clr">清除全部進度</button></div>
+      <div id="msg"></div>
+    </div>
+    <div class="card"><h3 style="margin-top:0">外觀</h3>
+      <label class="small muted" for="ui">背景模式（棋盤顏色不受影響）</label>
+      <select id="ui"><option value="auto"${set.ui === 'auto' ? ' selected' : ''}>跟隨手機設定</option><option value="light"${set.ui === 'light' ? ' selected' : ''}>淺色</option><option value="dark"${set.ui === 'dark' ? ' selected' : ''}>深色</option></select>
+    </div>
+    <div class="card"><h3 style="margin-top:0">棋盤與音效</h3>
+      <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 走子音效</label>
+      <label class="small muted" for="theme">棋盤配色</label>
+      <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
+      <div class="board-slot" id="theme-prev" style="margin-top:10px"></div>
+    </div>
+    <div class="card"><h3 style="margin-top:0">資料</h3>
+      <p>資料產生時間：${state.report ? esc(fmtDate(state.report.generated)) : '讀不到'}</p>
+      <p>題目數：${state.puzzles.length}${state.skipped ? `（有 ${state.skipped} 題格式不對，已略過）` : ''}</p>
+      <p>帳號：${esc(state.report?.username || '—')}</p>
+      <div class="btns"><button class="btn grow" id="upd">檢查更新並重新載入</button></div>
+    </div>
+    <p class="small muted">Tactix 版本 ${esc(APP_VERSION)}<br>棋子圖：cburnett（CC BY-SA）。棋規：chess.js（BSD）。詳見 vendor/LICENSES.md。</p>`;
+  const prev = () => {
+    try { renderBoard(document.getElementById('theme-prev'), { fen: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', orientation: 'white', mini: true }); } catch (e) { /* 預覽失敗不影響設定 */ }
+  };
+  prev();
+  document.getElementById('snd').addEventListener('change', ev => {
+    store.setSetting('sound', ev.target.checked);
+    audio.unlock();
+    if (ev.target.checked) audio.play('move');
+  });
+  document.getElementById('ui').addEventListener('change', ev => {
+    const v = ev.target.value;
+    store.setSetting('ui', v === 'light' || v === 'dark' ? v : 'auto');
+    applyTheme();
+  });
+  document.getElementById('theme').addEventListener('change', ev => {
+    store.setSetting('board', ev.target.value === 'brown' ? 'brown' : 'green');
+    applyTheme();
+  });
+  const msg = t => { document.getElementById('msg').innerHTML = `<div class="toast">${esc(t)}</div>`; };
+  document.getElementById('exp').addEventListener('click', () => {
+    try {
+      download(`chesscoach-progress-${new Date().toISOString().slice(0, 10)}.json`, store.exportText());
+      msg('已匯出。');
+    } catch (e) { msg('匯出失敗，請改用「複製進度文字」。'); }
+  });
+  document.getElementById('cpy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(store.exportText()); msg('已複製。'); }
+    catch (e) { msg('這個瀏覽器不允許複製，請改用匯出。'); }
+  });
+  document.getElementById('imp').addEventListener('change', async ev => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    try {
+      const obj = JSON.parse(await f.text());
+      if (!window.confirm('要用這個檔案取代目前的練習進度嗎？')) { ev.target.value = ''; return; }
+      const n = store.replaceAll(obj);
+      msg(`已匯入，共 ${n} 題的進度。`);
+      state.cur = null;
+    } catch (e) { msg('匯入失敗：檔案格式不對。'); }
+    ev.target.value = '';
+  });
+  document.getElementById('clr').addEventListener('click', () => {
+    if (!window.confirm('確定要清除全部練習進度嗎？這個動作無法復原。')) return;
+    store.clear();
+    state.cur = null;
+    pageSettings();
+  });
+  document.getElementById('upd').addEventListener('click', async () => {
+    msg('檢查中…');
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) await reg.update();
+      }
+    } catch (e) { /* 離線時略過 */ }
+    setTimeout(() => location.reload(), 800);
+  });
+}
+
+/* ---------- 啟動 ---------- */
+
+function applyTheme() {
+  const root = document.documentElement;
+  if (store.getSettings().board === 'brown') root.dataset.board = 'brown';
+  else delete root.dataset.board;
+  const ui = store.getSettings().ui;
+  if (ui === 'light' || ui === 'dark') root.dataset.theme = ui;
+  else delete root.dataset.theme;
+}
+
+async function main() {
+  store.load();
+  applyTheme();
+  // iPhone 要在使用者手勢裡啟動音效
+  for (const ev of ['pointerup', 'touchend', 'click']) document.addEventListener(ev, audio.unlock, { passive: true });
+  await loadData();
+  window.addEventListener('hashchange', route);
+  route();
+  if ('serviceWorker' in navigator && !MOCK) {
+    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) { /* 忽略 */ }
+  }
+}
+main();

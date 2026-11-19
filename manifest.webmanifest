@@ -1,0 +1,17 @@
+{
+  "name": "Tactix",
+  "short_name": "Tactix",
+  "description": "個人西洋棋教練：分析自己的漏著並做題練習",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f1ea",
+  "theme_color": "#265e42",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+  ]
+}

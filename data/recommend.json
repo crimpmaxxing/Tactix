@@ -1,0 +1,152 @@
+{
+ "generated": "2026-11-19 02:14",
+ "source": "lichess 1000–1200 blitz+rapid",
+ "note": "score=定義局面我方得分率；weighted_score=含對手偏離的加權得分；得分差 < 2 個百分點視為差距很小。",
+ "slots": [
+  {
+   "slot": "white",
+   "candidates": [
+    {
+     "id": "w-italian",
+     "name": "義大利開局（Italian Game）",
+     "moves": "1.e4 e5 2.Nf3 Nc6 3.Bc4",
+     "reach": 0.3558,
+     "score": 0.5305,
+     "weighted_score": 0.5245,
+     "branches": 40,
+     "games": 77827211,
+     "is_current": false,
+     "rank": 1,
+     "reason": "同為 1.e4 e5，和維也納好銜接。和現有得分差距很小。"
+    },
+    {
+     "id": "w-scotch",
+     "name": "蘇格蘭開局（Scotch Game）",
+     "moves": "1.e4 e5 2.Nf3 Nc6 3.d4",
+     "reach": 0.3558,
+     "score": 0.5539,
+     "weighted_score": 0.5328,
+     "branches": 56,
+     "games": 28373529,
+     "is_current": false,
+     "rank": 2,
+     "reason": "同為 1.e4 e5，早開中心換子。和現有得分差距很小。"
+    },
+    {
+     "id": "w-london",
+     "name": "倫敦體系（London System）",
+     "moves": "1.d4 d5 2.Bf4",
+     "reach": 0.5474,
+     "score": 0.5471,
+     "weighted_score": 0.5344,
+     "branches": 72,
+     "games": 32143021,
+     "is_current": false,
+     "rank": 3,
+     "reason": "d4 系統，幾乎照同一套擺子。和現有得分差距很小。"
+    },
+    {
+     "id": "w-vienna",
+     "name": "維也納開局（Vienna Game）",
+     "moves": "1.e4 e5 2.Nc3",
+     "reach": 0.5761,
+     "score": 0.5223,
+     "weighted_score": 0.5168,
+     "branches": 78,
+     "games": 26626612,
+     "is_current": true,
+     "rank": 5,
+     "reason": "你現在的走法，當比較基準。"
+    }
+   ]
+  },
+  {
+   "slot": "black_vs_e4",
+   "candidates": [
+    {
+     "id": "b4-caro",
+     "name": "卡羅康防禦（Caro-Kann）",
+     "moves": "1.e4 c6 2.d4 d5",
+     "reach": 0.3399,
+     "score": 0.4904,
+     "weighted_score": 0.5059,
+     "branches": 39,
+     "games": 13772185,
+     "is_current": true,
+     "rank": 1,
+     "reason": "你現在的走法，當比較基準。"
+    },
+    {
+     "id": "b4-french",
+     "name": "法蘭西防禦（French）",
+     "moves": "1.e4 e6 2.d4 d5",
+     "reach": 0.33,
+     "score": 0.501,
+     "weighted_score": 0.5018,
+     "branches": 56,
+     "games": 12987353,
+     "is_current": false,
+     "rank": 2,
+     "reason": "同為 …d5 結構，和卡羅康近似。和現有得分差距很小。"
+    },
+    {
+     "id": "b4-sicilian",
+     "name": "西西里防禦（Sicilian）",
+     "moves": "1.e4 c5 2.Nf3 d6",
+     "reach": 0.4392,
+     "score": 0.5015,
+     "weighted_score": 0.5102,
+     "branches": 73,
+     "games": 10334546,
+     "is_current": false,
+     "rank": 3,
+     "reason": "對照組，結構和卡羅康差很多。和現有得分差距很小。"
+    }
+   ]
+  },
+  {
+   "slot": "black_vs_d4",
+   "candidates": [
+    {
+     "id": "bd-indian",
+     "name": "印度防禦類（Indian，…Nf6 …g6）",
+     "moves": "1.d4 Nf6 2.Nf3 g6",
+     "reach": 0.1518,
+     "score": 0.5192,
+     "weighted_score": 0.4972,
+     "branches": 83,
+     "games": 1510763,
+     "is_current": false,
+     "rank": 1,
+     "reason": "…Nf6 加 …g6，要換整套思路。加權得分比現有高 2.6 點。"
+    },
+    {
+     "id": "bd-qgd",
+     "name": "后翼棄兵拒絕（Queen's Gambit Declined）",
+     "moves": "1.d4 d5 2.c4 e6",
+     "reach": 0.2866,
+     "score": 0.4602,
+     "weighted_score": 0.4699,
+     "branches": 81,
+     "games": 9894144,
+     "is_current": false,
+     "rank": 2,
+     "reason": "…d5 加 …e6，結構穩。和現有得分差距很小。"
+    },
+    {
+     "id": "bd-dutch",
+     "name": "荷蘭防禦（Dutch）",
+     "moves": "1.d4 f5 2.Nf3 Nf6",
+     "reach": 0.1453,
+     "score": 0.4826,
+     "weighted_score": 0.4711,
+     "branches": 86,
+     "games": 344856,
+     "is_current": true,
+     "rank": 3,
+     "reason": "你現在的走法，當比較基準。"
+    }
+   ]
+  }
+ ]
+}
