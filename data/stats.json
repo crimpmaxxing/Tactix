@@ -1,9 +1,9 @@
 {
- "generated": "2026-11-19T21:33:40+08:00",
- "games": 1401,
- "games_with_eval": 1401,
+ "generated": "2026-11-19T21:35:31+08:00",
+ "games": 1402,
+ "games_with_eval": 1402,
  "totals": {
-  "win": 718,
+  "win": 719,
   "draw": 84,
   "loss": 599
  },
@@ -14,14 +14,14 @@
    "loss": 291
   },
   "black": {
-   "win": 353,
+   "win": 354,
    "draw": 40,
    "loss": 308
   }
  },
  "by_time_class": {
   "blitz": {
-   "win": 331,
+   "win": 332,
    "draw": 27,
    "loss": 304
   },
@@ -33,7 +33,7 @@
  },
  "win_how": {
   "認輸": 323,
-  "將死": 248,
+  "將死": 249,
   "超時": 75,
   "棄局": 72
  },
@@ -51,8 +51,8 @@
   "超時（子力不足）": 4
  },
  "big_advantage": {
-  "games": 1095,
-  "win": 673,
+  "games": 1096,
+  "win": 674,
   "draw": 67,
   "loss": 355
  },
@@ -119,23 +119,23 @@
    },
    {
     "month": "2026-11",
-    "games": 97,
-    "mean": 88.0
+    "games": 98,
+    "mean": 88.1
    }
   ]
  },
  "blunder_rate_by_move": [
   {
    "bucket": "1–10",
-   "moves": 13822,
+   "moves": 13832,
    "blunders": 668,
    "per100": 4.83
   },
   {
    "bucket": "11–20",
-   "moves": 12778,
+   "moves": 12781,
    "blunders": 1326,
-   "per100": 10.38
+   "per100": 10.37
   },
   {
    "bucket": "21–30",
@@ -170,7 +170,7 @@
    "score": 0.54
   },
   "18–24": {
-   "games": 746,
+   "games": 747,
    "score": 0.539
   }
  },
@@ -184,7 +184,7 @@
    "score": 0.891
   },
   "±50": {
-   "games": 1323,
+   "games": 1324,
    "score": 0.542
   },
   "+50~+200": {
@@ -202,8 +202,8 @@
    "score": 0.556
   },
   "draw": {
-   "games": 67,
-   "score": 0.567
+   "games": 68,
+   "score": 0.574
   },
   "loss": {
    "games": 529,
@@ -226,9 +226,9 @@
    "change_30d": 39
   },
   "blitz": {
-   "now": 891,
+   "now": 899,
    "peak": 924,
-   "change_30d": 59
+   "change_30d": 67
   }
  },
  "params": {

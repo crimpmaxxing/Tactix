@@ -1,11 +1,11 @@
 {
-  "generated": "2026-11-19T21:33:37+08:00",
+  "generated": "2026-11-19T21:35:28+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1401,
-    "blitz": 662,
+    "games": 1402,
+    "blitz": 663,
     "rapid": 739,
-    "win": 718,
+    "win": 719,
     "draw": 84,
     "loss": 599
   },
@@ -7014,10 +7014,15 @@
       "date": "2026-11-19",
       "time_class": "blitz",
       "rating": 891
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 899
     }
   ],
   "blunders": {
-    "per_game": 2.43,
+    "per_game": 2.42,
     "by_category": {
       "hanging": 913,
       "missed_threat": 413,
@@ -7199,12 +7204,12 @@
       "family": "Dutch Defense",
       "name": "Dutch Defense",
       "color": "black",
-      "games": 66,
-      "win": 30,
+      "games": 67,
+      "win": 31,
       "draw": 2,
       "loss": 34,
-      "score": 0.47,
-      "avg_wp_after_move10": 41.0,
+      "score": 0.478,
+      "avg_wp_after_move10": 41.2,
       "first_blunder_move_avg": 14.6,
       "common_mistakes": []
     },
