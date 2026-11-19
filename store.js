@@ -105,6 +105,17 @@ export function counts() {
 export const SETTINGS_KEY = 'chesscoach.v1.settings';
 let smem = null;
 
+function cleanLevels(x) {
+  const out = {};
+  if (x && typeof x === 'object' && !Array.isArray(x)) {
+    for (const [k, v] of Object.entries(x)) {
+      const n = Math.floor(Number(v));
+      if (n >= 1 && n <= 4) out[k] = n;
+    }
+  }
+  return out;
+}
+
 export function getSettings() {
   if (smem) return smem;
   let o = null;
@@ -119,6 +130,9 @@ export function getSettings() {
     evalbar: o && typeof o.evalbar === 'boolean' ? o.evalbar : true,
     capture: o && ['rec1', 'rec2', 'rec3'].includes(o.capture) ? o.capture : 'rec3',
     ignoreMute: o && typeof o.ignoreMute === 'boolean' ? o.ignoreMute : false,
+    // 學習模式：每批新線條數、各套開局目前的等級（{開局id: 1–4}）
+    learnBatch: o && o.learnBatch != null && Number.isFinite(Number(o.learnBatch)) ? Math.min(10, Math.max(1, Math.floor(Number(o.learnBatch)))) : 4,
+    learnLevel: cleanLevels(o && o.learnLevel),
   };
   return smem;
 }

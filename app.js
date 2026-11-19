@@ -4,9 +4,10 @@ import { Board, renderBoard } from './board.js';
 import * as audio from './audio.js';
 import * as T from './trainer.js';
 import * as engine from './engine.js';
+import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.4.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.5.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -61,6 +62,8 @@ const state = {
   reportError: false,
   puzzlesError: false,
   openings: null,   // openings.json 的 repertoires 陣列；讀不到是 null
+  learnData: null,  // learn.json（學習模式的章節）；讀不到是 null
+  learn: null,      // 學習模式目前的工作階段
   tmos: [],         // 排程中的延遲動作
   drill: null,      // 「從頭練」目前的練習
   filter: { category: '', opening: '', openingOnly: false, motif: '' },
@@ -189,6 +192,10 @@ async function loadData() {
     }
     state.openings = reps.length ? reps : null;
   } catch (e) { state.openings = null; }
+  try {
+    const lj = await getJson(DATA_DIR + 'learn.json');
+    state.learnData = lj && Array.isArray(lj.levels) && lj.levels.length && lj.repertoires && typeof lj.repertoires === 'object' ? lj : null;
+  } catch (e) { state.learnData = null; }
 }
 
 const SVG = (d, extra = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
@@ -243,19 +250,32 @@ function route() {
   engine.stop();
   cleanupOverview();
   state.evalFen = null;
+  state.learn = null;
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'overview';
-  document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === page));
+  document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === (page === 'learn' ? 'openings' : page)));
   window.scrollTo(0, 0);
   const isDrill = page === 'openings' && parts[1] === 'drill';
   if (!isDrill || parts[2] === undefined) state.drill = null;
-  const boardPage = page === 'practice' || (isDrill && parts[2] !== undefined);
+  const isLearn = page === 'learn';
+  const learnBoard = isLearn && parts[1] !== undefined &&
+    ((parts[2] === 'review' && parts[3] === undefined) || ['new', 'review', 'browse', 'from'].includes(parts[3]));
+  const boardPage = page === 'practice' || (isDrill && parts[2] !== undefined) || learnBoard;
   $view.classList.toggle('wide', boardPage);
   $view.classList.toggle('ovpage', page === 'overview' || page === '');
   document.body.classList.toggle('fit', boardPage);
   updateFitH();
   try {
-    if (isDrill && parts[2] !== undefined) pageDrill(decodeURIComponent(parts[2]));
+    if (isLearn) {
+      const rid = parts[1] !== undefined ? decodeURIComponent(parts[1]) : null;
+      if (rid === null) pageLearnList();
+      else if (parts[2] === undefined) pageLearnRep(rid);
+      else if (parts[2] === 'review' && parts[3] === undefined) learnSession(rid, null, 'review');
+      else if (parts[3] === undefined) pageLearnChapter(rid, decodeURIComponent(parts[2]));
+      else if (learnBoard) learnSession(rid, decodeURIComponent(parts[2]), parts[3], parts[4] !== undefined ? decodeURIComponent(parts[4]) : '');
+      else pageLearnList();
+    }
+    else if (isDrill && parts[2] !== undefined) pageDrill(decodeURIComponent(parts[2]));
     else if (isDrill) pageDrillList();
     else if (page === 'openings' && parts[1] !== undefined) pageOpeningDetail(Number(parts[1]));
     else if (page === 'openings') pageOpenings();
@@ -314,7 +334,13 @@ function colorSection(title, list) {
 function pageOpenings() {
   setTitle('開局');
   const r = state.report;
-  const entry = `<a class="row chev" href="#/openings/drill">
+  let learnEntry = '';
+  if (state.openings && state.learnData) {
+    const n = learnDueTotal();
+    learnEntry = `<a class="row chev" href="#/learn">
+    <div class="l"><div>學習模式</div><div class="small muted">分章學習常見分支，逐級加深</div></div>${n ? `<div class="r"><b>${n}</b><div>到期</div></div>` : ''}</a>`;
+  }
+  const entry = learnEntry + `<a class="row chev" href="#/openings/drill">
     <div class="l"><div>從頭練</div><div class="small muted">從第一步開始，練一整套開局</div></div></a>`;
   if (!r || !Array.isArray(r.openings)) { $view.innerHTML = entry + noData('開局資料'); return; }
   const all = r.openings.map((o, i) => ({ o, i }));
@@ -644,7 +670,7 @@ function drawPuzzle() {
 const DEFAULT_HINT = '先看看對方有什麼威脅，再找有沒有吃子或將軍的機會。';
 
 function alive(s) {
-  return (state.cur === s || state.drill === s) && !!state.board && document.body.contains(state.board.host);
+  return (state.cur === s || state.drill === s || state.learn === s) && !!state.board && document.body.contains(state.board.host);
 }
 
 // 排程一個動作；離開頁面時 stopTimer 會全部取消
@@ -683,7 +709,10 @@ function updateBoard(s, o = {}) {
     interactive: ex ? !ex.game.isGameOver() : (!!s.q && !s.busy && !s.done),
     turn: (ex ? ex.game : s.game).turn(),
     legal: sq => (ex ? ex.game : s.game).moves({ square: sq, verbose: true }),
-    onMove: ex ? (from, to, promo) => exploreMove(s, from, to, promo) : (from, to, promo) => onUserMove(s, from, to, promo),
+    onMove: ex ? (from, to, promo) => exploreMove(s, from, to, promo)
+      : s.onMove ? (from, to, promo) => s.onMove(s, from, to, promo)
+      : (from, to, promo) => onUserMove(s, from, to, promo),
+    arrows: ex ? null : (s.arrows || null),
     animate: !!o.animate,
   });
   refreshEval(s, fen);
@@ -869,7 +898,7 @@ function playMove(s, san) {
     audio.play(r.captured ? 'capture' : 'move');
   } catch (e) { return false; }
   updateBoard(s, { animate: true });
-  if (s.kind === 'drill') updatePanel(s);   // 走法記錄要跟著更新
+  if (s.kind === 'drill' || s.kind === 'learn') updatePanel(s);   // 走法記錄要跟著更新
   return true;
 }
 
@@ -990,6 +1019,7 @@ function recText(rec) {
 function updatePanel(s, scroll = false) {
   if (s.explore) explorePanel(s);
   else if (s.kind === 'puzzle') puzzlePanel(s);
+  else if (s.kind === 'learn') learnPanel(s);
   else drillPanel(s);
 }
 
@@ -1136,7 +1166,7 @@ function puzzlePanel(c) {
 
 const NO_OPENINGS = `<div class="card empty"><p>開局資料還沒產生。</p><p class="muted small">請先在電腦執行 build_openings.py。</p></div>`;
 
-function nodeId(rep, key) { return `op:${rep.id}:${key}`; }
+function nodeId(rep, key) { return L.nodeId(rep, key); }
 
 function countDue(rep) {
   let n = 0;
@@ -1374,6 +1404,711 @@ function drillPanel(s) {
   document.getElementById('restart').addEventListener('click', () => pageDrill(s.rep.id));
 }
 
+/* ---------- 學習模式 ---------- */
+
+const NO_LEARN = `<div class="card empty"><p>學習資料還沒產生。</p><p class="muted small">缺少 data/learn.json。</p></div>`;
+const enc = encodeURIComponent;
+
+function learnLevelOf(repId) {
+  const n = Number(store.getSettings().learnLevel?.[repId]);
+  return Number.isFinite(n) && n >= 1 && n <= 4 ? Math.floor(n) : 1;
+}
+
+function setLearnLevel(repId, n) {
+  store.setSetting('learnLevel', { ...store.getSettings().learnLevel, [repId]: n });
+}
+
+// 這套開局的學習資料與目前等級；找不到回 null
+function learnCtx(repId) {
+  const root = state.learnData;
+  if (!state.openings || !root) return null;
+  const rep = state.openings.find(r => r.id === repId);
+  const ld = root.repertoires && root.repertoires[repId];
+  if (!rep || !ld || !Array.isArray(ld.chapters)) return null;
+  const levels = root.levels;
+  const lv = Math.min(learnLevelOf(repId), levels.length);
+  return { rep, ld, levels, lv, thr: levels[lv - 1] };
+}
+
+function learnMissing(back) {
+  setTitle('學習模式', back);
+  $view.innerHTML = `<div class="card empty"><p>找不到這套開局或章節。</p><a class="btn" href="#/learn">回清單</a></div>`;
+}
+
+function pbarHtml(p) {
+  const t = p.total || 0;
+  const w = n => (t ? n / t * 100 : 0).toFixed(2);
+  return `<div class="pbar" role="img" aria-label="已熟 ${p.known}、到期 ${p.due}、未學 ${p.fresh}">`
+    + `<i class="k" style="width:${w(p.known)}%"></i><i class="d" style="width:${w(p.due)}%"></i><i class="n" style="width:${w(p.fresh)}%"></i></div>`;
+}
+
+const PKEY = '<div class="pkey"><span><i class="k"></i>已熟</span><span><i class="d"></i>到期</span><span><i class="n"></i>未學</span></div>';
+
+// 全部開局的到期步數（開局頁的入口用）
+function learnDueTotal() {
+  if (!state.openings || !state.learnData) return 0;
+  let n = 0;
+  const now = Date.now();
+  for (const rep of state.openings) {
+    const c = learnCtx(rep.id);
+    if (c) n += L.repProgress(rep, c.ld, c.thr, now).due;
+  }
+  return n;
+}
+
+function pageLearnList() {
+  setTitle('學習模式', '#/openings');
+  if (!state.openings || !state.learnData) { $view.innerHTML = NO_LEARN; return; }
+  const now = Date.now();
+  const rows = state.openings.map(rep => {
+    const c = learnCtx(rep.id);
+    if (!c) return '';
+    const p = L.repProgress(rep, c.ld, c.thr, now);
+    return `<a class="row chev learnrow" href="#/learn/${enc(rep.id)}">
+      <div class="l"><div>${esc(rep.name)}</div>
+        <div class="small muted">${rep.color === 'black' ? '執黑' : '執白'}　第 ${c.lv} 級</div>
+        ${pbarHtml(p)}</div>
+      <div class="r"><b>${p.due}</b><div>到期</div></div></a>`;
+  }).join('');
+  $view.innerHTML = `<p class="muted small">選一套開局，分章學習常見分支。</p>${rows || NO_LEARN}${PKEY}`;
+}
+
+function levelDesc(levels) {
+  return levels.map((l, i) => `第${i + 1}級＝每 ${Math.round(1 / l)} 盤${i === 0 ? '遇到 1 次以上' : ''}`).join('；');
+}
+
+function pageLearnRep(repId) {
+  const c = learnCtx(repId);
+  if (!c) { learnMissing('#/learn'); return; }
+  const { rep, ld, levels, lv, thr } = c;
+  setTitle(rep.name, '#/learn');
+  const now = Date.now();
+  const p = L.progressOf(L.repMoves(rep, ld, thr), now);
+  const lvBtns = levels.map((t, i) => {
+    const n = L.repMoves(rep, ld, t).length;
+    return `<button class="btn${i + 1 === lv ? ' on' : ''}" data-lv="${i + 1}" aria-pressed="${i + 1 === lv}">第 ${i + 1} 級<small>${n} 步</small></button>`;
+  }).join('');
+  const rows = ld.chapters.map(ch => {
+    const share = `實戰 ${L.fmtPct(ch.share)}`;
+    const items = L.chapterMoves(rep, ch, thr);
+    if (!items.length) {
+      let open = 0;
+      for (let k = lv + 1; k <= levels.length; k++) {
+        if (L.chapterMoves(rep, ch, levels[k - 1]).length) { open = k; break; }
+      }
+      return `<div class="row off"><div class="l"><div>${esc(ch.title)}</div><div class="small muted">${share}</div><div class="small muted pclamp">${esc(L.pathZh(L.commonPrefix(ch.prefixes)))}</div></div>
+        <div class="r">${open ? `第 ${open} 級開放` : '—'}</div></div>`;
+    }
+    const cp = L.progressOf(items, now);
+    return `<a class="row chev learnrow" href="#/learn/${enc(repId)}/${enc(ch.id)}">
+      <div class="l"><div>${esc(ch.title)}</div><div class="small muted">${share}</div><div class="small muted pclamp">${esc(L.pathZh(L.commonPrefix(ch.prefixes)))}</div>${pbarHtml(cp)}</div>
+      <div class="r"><b>${cp.due}</b><div>到期</div></div></a>`;
+  }).join('');
+  $view.innerHTML = `
+    <div class="card">
+      <div>${sideChip(rep.color)}</div>
+      <p class="small muted" style="margin:8px 0 0">${esc(levelDesc(levels))}</p>
+      <div class="lvls">${lvBtns}</div>
+      ${pbarHtml(p)}
+      <div class="small muted" style="margin-top:4px">第 ${lv} 級共 ${p.total} 步：已熟 ${p.known}，到期 ${p.due}，未學 ${p.fresh}。</div>
+      <div class="btns"><a class="btn primary grow" href="#/learn/${enc(repId)}/review"${p.due ? '' : ' aria-disabled="true" tabindex="-1"'}>全部複習（${p.due}）</a></div>
+    </div>
+    <h2>章節</h2>${rows}${PKEY}`;
+  $view.querySelectorAll('.lvls .btn').forEach(b => b.addEventListener('click', () => {
+    setLearnLevel(repId, Number(b.dataset.lv));
+    pageLearnRep(repId);
+  }));
+}
+
+function pageLearnChapter(repId, chId) {
+  const c = learnCtx(repId);
+  const ch = c && c.ld.chapters.find(x => x.id === chId);
+  if (!c || !ch) { learnMissing('#/learn'); return; }
+  const { rep, lv, thr } = c;
+  setTitle(ch.title, `#/learn/${enc(repId)}`);
+  const now = Date.now();
+  const items = L.chapterMoves(rep, ch, thr);
+  const p = L.progressOf(items, now);
+  const nLines = L.newLines(rep, ch, thr, Infinity, now).length;
+  const base = `#/learn/${enc(repId)}/${enc(chId)}`;
+  const dis = ok => (ok ? '' : ' aria-disabled="true" tabindex="-1"');
+  $view.innerHTML = `
+    <div class="card">
+      <div class="small muted">${rep.color === 'black' ? '執黑' : '執白'}　實戰 ${esc(L.fmtPct(ch.share))}　第 ${lv} 級</div>
+      <div class="pathline">${esc(L.pathZh(L.commonPrefix(ch.prefixes)))}</div>
+      ${ch.plan ? `<h3>計畫</h3><p class="prose">${esc(ch.plan)}</p>` : ''}
+      ${ch.watch ? `<h3>注意</h3><p class="prose">${esc(ch.watch)}</p>` : ''}
+      ${p.total ? `${pbarHtml(p)}<div class="small muted" style="margin-top:4px">共 ${p.total} 步：已熟 ${p.known}，到期 ${p.due}，未學 ${p.fresh}。</div>`
+        : `<p class="muted">第 ${lv} 級沒有這章的著法，可在上一頁調高等級。</p>`}
+    </div>
+    <div class="btns vlist">
+      <a class="btn primary" href="${base}/new"${dis(nLines)}>學新線（${nLines} 條）</a>
+      <a class="btn" href="${base}/review"${dis(p.due)}>複習（${p.due} 步）</a>
+      <a class="btn" href="${base}/browse">瀏覽分支</a>
+    </div>${p.total ? PKEY : ''}`;
+}
+
+/* ----- 學習工作階段（學新線、複習、瀏覽、從這裡練）----- */
+
+function learnSession(repId, chId, sub, arg) {
+  const c = learnCtx(repId);
+  const chap = c && chId ? c.ld.chapters.find(x => x.id === chId) || null : null;
+  if (!c || (chId && !chap)) { learnMissing('#/learn'); return; }
+  const back = chap ? `#/learn/${enc(repId)}/${enc(chId)}` : `#/learn/${enc(repId)}`;
+  setTitle(chap ? chap.title : `${c.rep.name}：複習`, back);
+  stopTimer();
+  const s = state.learn = {
+    kind: 'learn', mode: sub, rep: c.rep, ld: c.ld, chap, back, thr: c.thr,
+    orientation: c.rep.color,
+    game: new Chess(), last: null, prevLast: null, hl: [], arrows: null, status: '',
+    q: null, cm: null, busy: true, done: false, msg: null, notice: null, phase: '',
+    errs: 0, qErr: false, lineErr: false, revealed: false,
+    lines: [], li: 0, line: null, mi: 0, pv: 0, attempt: 1,
+    newSet: new Set(), seen: new Set(), recorded: new Set(),
+    stats: { asked: 0, clean: 0 },
+    queue: [], pending: new Set(), cur: null, total: 0,
+    path: [], pos: null,
+    onMove: learnUserMove,
+  };
+  $view.innerHTML = `<div class="split" id="split">
+    <div class="split-board" id="bcol">
+      <div class="turn">${sideChip(c.rep.color)}<span>${esc(c.rep.name)}</span></div>
+      ${boardRowHtml()}
+    </div>
+    <div class="split-info"><div id="panel"></div></div></div>`;
+  state.board = new Board(document.getElementById('board'));
+  state.evalFen = null;
+  if (store.getSettings().evalbar) engine.warm();
+  updateBoard(s);
+  updatePanel(s);
+  if (sub === 'new') learnStartNew(s);
+  else if (sub === 'review') {
+    const items = chap ? L.chapterMoves(c.rep, chap, c.thr) : L.repMoves(c.rep, c.ld, c.thr);
+    learnStartReview(s, L.dueItems(items));
+  } else if (sub === 'browse') {
+    s.phase = 'browse';
+    s.path = L.commonPrefix(chap.prefixes);
+    browseRender(s, false);
+  } else if (sub === 'from') {
+    const path = String(arg || '').split('_').filter(Boolean);
+    learnStartFrom(s, path);
+  } else { learnMissing('#/learn'); }
+}
+
+function learnArrow(m, color) {
+  return { from: m.from, to: m.to, color: color || 'var(--arrow-good)' };
+}
+
+function learnCheckLevel(s) {
+  const c = learnCtx(s.rep.id);
+  if (!c) return;
+  const nl = L.maybeLevelUp(c.rep, c.ld, c.lv, c.levels);
+  if (nl > c.lv) {
+    setLearnLevel(s.rep.id, nl);
+    s.notice = `第 ${nl} 級已開放`;
+  }
+}
+
+function noticeHtml(s) {
+  if (!s.notice) return '';
+  const t = s.notice;
+  s.notice = null;   // 只顯示一次
+  return `<div class="notice">${esc(t)}</div>`;
+}
+
+function learnEmpty(s, text) {
+  s.phase = 'empty';
+  s.busy = false;
+  s.q = null;
+  s.msg = { kind: 'info', title: text, text: '' };
+  updateBoard(s);
+  updatePanel(s);
+}
+
+/* ----- 學新線 ----- */
+
+function learnStartNew(s) {
+  const c = learnCtx(s.rep.id);
+  if (c) s.thr = c.thr;
+  s.lines = L.newLines(s.rep, s.chap, s.thr, store.getSettings().learnBatch);
+  s.li = 0;
+  s.newSet = new Set();
+  s.seen = new Set();
+  s.recorded = new Set();
+  s.stats = { asked: 0, clean: 0 };
+  for (const ln of s.lines) for (const m of ln.moves) if (m.me && m.id && L.moveStatus(m.id) === 'new') s.newSet.add(m.id);
+  if (!s.lines.length) { learnEmpty(s, '這一章目前沒有未學的線。'); return; }
+  learnPreview(s);
+}
+
+function learnStartFrom(s, path) {
+  const c = learnCtx(s.rep.id);
+  s.fromPath = path;
+  s.attempt = 1;
+  const pos = L.positionAt(s.rep, path);
+  const lines = pos && pos.node ? L.linesFrom(s.rep, path, c.thr).slice(0, store.getSettings().learnBatch) : [];
+  s.lines = lines;
+  s.li = 0;
+  s.newSet = new Set();
+  s.seen = new Set();
+  s.recorded = new Set();
+  s.stats = { asked: 0, clean: 0 };
+  if (!lines.length) { learnEmpty(s, '這個局面之後沒有可練的線。'); return; }
+  learnQuizStart(s);
+}
+
+function learnNextLine(s) {
+  s.li++;
+  s.attempt = 1;
+  if (s.li >= s.lines.length) { learnSummary(s); return; }
+  if (s.mode === 'from') learnQuizStart(s); else learnPreview(s);
+}
+
+function learnPreview(s) {
+  s.phase = 'pre';
+  s.line = s.lines[s.li];
+  s.attempt = 1;
+  s.msg = null;
+  s.q = null;
+  s.busy = true;
+  pvSet(s, 0, false);
+}
+
+// 預覽走到第 k 步之後的局面；箭頭標出「下一步」
+function pvSet(s, k, animate) {
+  const line = s.line;
+  s.pv = k;
+  const m = k > 0 ? line.moves[k - 1] : null;
+  s.game = new Chess(m ? m.fenAfter : L.START_FEN);
+  s.last = m ? { from: m.from, to: m.to } : null;
+  const nx = line.moves[k];
+  s.arrows = nx ? [learnArrow(nx, nx.me ? 'var(--arrow-me)' : 'var(--arrow-opp)')] : null;
+  updateBoard(s, { animate });
+  if (animate && m) audio.play(m.cap ? 'capture' : 'move');
+  updatePanel(s);
+}
+
+function learnQuizStart(s) {
+  const line = s.lines[s.li];
+  s.line = line;
+  s.phase = 'quiz';
+  s.lineErr = false;
+  s.msg = null;
+  s.arrows = null;
+  s.status = '';
+  s.q = null;
+  s.busy = true;
+  s.mi = s.mode === 'from' ? line.start : 0;
+  const pm = s.mi > 0 ? line.moves[s.mi - 1] : null;
+  s.game = new Chess(pm ? pm.fenAfter : L.START_FEN);
+  s.last = pm ? { from: pm.from, to: pm.to } : null;
+  updateBoard(s);
+  updatePanel(s);
+  later(s, 450, () => learnStep(s));
+}
+
+// 已熟、而且不是這批新學的著法：自動快轉
+function learnSkip(s, m) {
+  if (!m.node) return true;
+  if (s.mode !== 'new') return false;
+  return L.moveStatus(m.id) === 'known' && (!s.newSet.has(m.id) || s.seen.has(m.id));
+}
+
+function learnStep(s) {
+  const line = s.line;
+  if (s.mi >= line.moves.length) { learnLineDone(s); return; }
+  const m = line.moves[s.mi];
+  if (!m.me || learnSkip(s, m)) {
+    s.q = null;
+    s.busy = true;
+    later(s, m.me ? 300 : 500, () => {
+      playMove(s, m.san);
+      s.mi++;
+      later(s, 400, () => learnStep(s));
+    });
+    return;
+  }
+  learnAsk(s);
+}
+
+function learnAsk(s) {
+  const m = s.line.moves[s.mi];
+  s.cm = m;
+  s.q = { fen: m.fenBefore, best: m.san };
+  s.errs = 0;
+  s.qErr = false;
+  s.revealed = false;
+  s.busy = false;
+  s.status = '';
+  s.arrows = null;
+  s.msg = null;
+  updateBoard(s);
+  updatePanel(s);
+}
+
+// 每個著法在一輪裡只記一次（第一次對或錯）；複習的補考不記
+function learnRecord(s, m, correct) {
+  if (!m.id || s.recorded.has(m.id)) return;
+  if (s.cur && s.cur.retry) return;
+  s.recorded.add(m.id);
+  s.rec = store.record(m.id, correct);
+  if (correct) s.seen.add(m.id);
+}
+
+function learnUserMove(s, from, to, promo) {
+  if (!s || s.busy || s.done || !s.q || !s.cm) return;
+  let mv;
+  try { mv = s.game.move({ from, to, promotion: promo || 'q' }); } catch (e) { return; }
+  s.prevLast = s.last;
+  s.last = { from: mv.from, to: mv.to };
+  s.arrows = null;
+  audio.play(mv.captured ? 'capture' : 'move');
+  const m = s.cm;
+  if (norm(mv.san) === norm(m.san)) { learnCorrect(s); return; }
+  const mvZh = L.zhSan(mv.san, mv.color === 'w');
+  const bestZh = L.zhSan(m.san, m.white);
+  const alt = Object.keys(m.node.accept && typeof m.node.accept === 'object' ? m.node.accept : {})
+    .some(a => norm(a) === norm(mv.san));
+  s.busy = true;
+  if (alt) {
+    // 可行但不是本線：不算錯，收回後請使用者改下本線的著法
+    s.msg = { kind: 'info', title: `可行，但本線走 ${bestZh}`, text: '請改下本線的著法。' };
+    s.status = '';
+    updateBoard(s, { animate: true });
+    updatePanel(s);
+    later(s, 1100, () => learnRewind(s, true));
+    return;
+  }
+  s.errs++;
+  s.qErr = true;
+  s.lineErr = true;
+  learnRecord(s, m, false);
+  const why = T.lookup(m.node.why, mv.san);
+  s.msg = { kind: 'bad', title: `${mvZh}：不是本線的著法`, text: typeof why === 'string' && why ? why : `箭頭是正確的走法：${bestZh}。` };
+  s.status = 'bad';
+  updateBoard(s, { animate: true });
+  updatePanel(s);
+  later(s, 900, () => learnRewind(s, true));
+}
+
+// 收回使用者剛走的一步，並用箭頭標出本線的走法
+function learnRewind(s, showArrow) {
+  s.game.undo();
+  s.last = s.prevLast;
+  s.busy = false;
+  s.status = '';
+  s.arrows = showArrow && s.cm ? [learnArrow(s.cm)] : null;
+  updateBoard(s);
+  updatePanel(s);
+}
+
+function learnCorrect(s) {
+  const m = s.cm;
+  const first = !s.qErr;
+  if (first) learnRecord(s, m, true);
+  if (!(s.cur && s.cur.retry)) { s.stats.asked++; if (first) s.stats.clean++; }
+  s.busy = true;
+  s.status = 'ok';
+  s.msg = { kind: 'ok', title: '正確', text: typeof m.node.idea === 'string' ? m.node.idea : '' };
+  s.q = null;
+  s.asking = false;
+  s.mi++;
+  updateBoard(s, { animate: true });
+  updatePanel(s);
+  later(s, 750, () => {
+    s.status = '';
+    if (s.mode === 'review') reviewAfter(s); else learnStep(s);
+  });
+}
+
+function learnGiveUp(s) {
+  if (s.busy || !s.q || s.revealed || !s.cm) return;
+  s.revealed = true;
+  s.qErr = true;
+  s.lineErr = true;
+  learnRecord(s, s.cm, false);
+  s.arrows = [learnArrow(s.cm)];
+  s.msg = { kind: 'info', title: '解答', text: `${L.zhSan(s.cm.san, s.cm.white)}，請走一次。` };
+  updateBoard(s);
+  updatePanel(s);
+}
+
+function learnLineDone(s) {
+  s.q = null;
+  if (s.lineErr) {
+    s.attempt++;
+    s.busy = true;
+    s.msg = { kind: 'info', title: '這條線有錯誤', text: '再測一遍。' };
+    updateBoard(s);
+    updatePanel(s);
+    later(s, 1400, () => learnQuizStart(s));
+    return;
+  }
+  learnCheckLevel(s);
+  s.phase = 'lineDone';
+  s.busy = false;
+  s.arrows = null;
+  updateBoard(s);
+  updatePanel(s);
+}
+
+function learnSummary(s) {
+  learnCheckLevel(s);
+  s.phase = 'sum';
+  s.q = null;
+  s.busy = false;
+  s.arrows = null;
+  updateBoard(s);
+  updatePanel(s);
+}
+
+/* ----- 複習 ----- */
+
+function learnStartReview(s, items) {
+  s.queue = items.map(it => ({ id: it.id, line: it.line, idx: it.idx, retry: false }));
+  s.pending = new Set(items.map(it => it.id));
+  s.total = items.length;
+  s.stats = { asked: 0, clean: 0 };
+  s.recorded = new Set();
+  s.seen = new Set();
+  if (!items.length) { learnEmpty(s, '目前沒有到期的著法。'); return; }
+  s.phase = 'quiz';
+  reviewNext(s);
+}
+
+// 每題從該著法往前兩個半步開始，自動走那兩步再讓使用者下
+function reviewNext(s) {
+  if (!s.queue.length) { learnSummary(s); return; }
+  const it = s.queue.shift();
+  s.cur = it;
+  s.line = it.line;
+  s.asking = true;
+  if (!it.retry) s.pending.delete(it.id);
+  const st = Math.max(0, it.idx - 2);
+  const pm = st > 0 ? it.line.moves[st - 1] : null;
+  s.mi = st;
+  s.game = new Chess(pm ? pm.fenAfter : L.START_FEN);
+  s.last = pm ? { from: pm.from, to: pm.to } : null;
+  s.q = null;
+  s.busy = true;
+  s.msg = null;
+  s.arrows = null;
+  s.status = '';
+  updateBoard(s);
+  updatePanel(s);
+  const play = () => {
+    if (s.mi >= it.idx) { learnAsk(s); return; }
+    playMove(s, it.line.moves[s.mi].san);
+    s.mi++;
+    later(s, 600, play);
+  };
+  later(s, 500, play);
+}
+
+// 答對後：答錯過的排到最後再考；否則同一條線下一步也到期就接著考
+function reviewAfter(s) {
+  const it = s.cur;
+  const line = s.line;
+  if (s.qErr) {
+    s.queue.push({ id: it.id, line: it.line, idx: it.idx, retry: true });
+    reviewNext(s);
+    return;
+  }
+  const opp = line.moves[s.mi];        // s.mi 已經指向答完的下一步（對手的應著）
+  const nm = line.moves[s.mi + 1];
+  if (!it.retry && opp && !opp.me && nm && nm.id && s.pending.has(nm.id)) {
+    s.pending.delete(nm.id);
+    s.queue = s.queue.filter(x => x.id !== nm.id);
+    s.cur = { id: nm.id, line, idx: s.mi + 1, retry: false };
+    s.q = null;
+    s.busy = true;
+    later(s, 400, () => {
+      playMove(s, opp.san);
+      s.mi++;
+      later(s, 500, () => learnAsk(s));
+    });
+    return;
+  }
+  reviewNext(s);
+}
+
+/* ----- 瀏覽分支 ----- */
+
+function browseRender(s, animate) {
+  const pos = L.positionAt(s.rep, s.path);
+  s.pos = pos;
+  s.q = null;
+  s.busy = false;
+  s.status = '';
+  if (!pos) { s.arrows = null; updateBoard(s); updatePanel(s); return; }
+  s.game = new Chess(pos.fen);
+  s.last = pos.last;
+  let arrows = null;
+  const node = pos.node;
+  if (node && !pos.over) {
+    if (node.me) {
+      const st = L.step(pos.fen, node.best);
+      if (st) arrows = [{ from: st.from, to: st.to, color: 'var(--arrow-me)' }];
+    } else {
+      const reps = (node.replies || []).filter(r => Number(r[1]) > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const top = reps.length ? Number(reps[0][1]) : 1;
+      arrows = [];
+      for (const r of reps) {
+        const st = L.step(pos.fen, r[0]);
+        if (st) arrows.push({ from: st.from, to: st.to, color: 'var(--arrow-opp)', opacity: +(0.3 + 0.6 * (Number(r[1]) / top)).toFixed(2) });
+      }
+    }
+  }
+  s.arrows = arrows;
+  updateBoard(s, { animate });
+  if (animate && pos.last) audio.play(pos.cap ? 'capture' : 'move');
+  updatePanel(s);
+}
+
+function browseGo(s, san) {
+  s.path.push(san);
+  if (!L.positionAt(s.rep, s.path)) { s.path.pop(); return; }
+  browseRender(s, true);
+}
+
+function browsePanel(s, el) {
+  const pos = s.pos;
+  const node = pos && pos.node;
+  let body;
+  if (!pos) body = '<div class="result info"><p>這個局面讀不出來。</p></div>';
+  else if (pos.over) body = '<div class="result info"><p>對局已結束。</p></div>';
+  else if (!node) body = '<div class="result info"><p>這個局面沒有更多資料。</p></div>';
+  else if (node.me) {
+    const st = L.step(pos.fen, node.best);
+    const zh = st ? L.zhSan(st.san, st.white) : node.best;
+    const alts = Object.entries(node.accept && typeof node.accept === 'object' ? node.accept : {})
+      .filter(([a]) => norm(a) !== norm(node.best))
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .map(([a]) => ({ san: a, st: L.step(pos.fen, a) }))
+      .filter(x => x.st);
+    body = `<div class="small muted" style="margin:6px 0 2px">輪到你</div>
+      <button class="row brow" data-san="${esc(node.best)}"><div class="l"><div>你的走法：${esc(zh)}</div>${node.idea ? `<div class="small muted">${esc(node.idea)}</div>` : ''}</div></button>
+      ${alts.length ? `<div class="alts"><span>也可以：</span>${alts.map(x => `<button class="chip" data-san="${esc(x.san)}">${esc(L.zhSan(x.st.san, x.st.white))}</button>`).join('')}</div>` : ''}`;
+  } else {
+    const rows = (node.replies || []).filter(r => Number(r[1]) > 0).sort((a, b) => b[1] - a[1])
+      .map(r => ({ r, st: L.step(pos.fen, r[0]) })).filter(x => x.st);
+    body = `<div class="small muted" style="margin:6px 0 2px">對手可能走</div>`
+      + rows.map(x => `<button class="row brow" data-san="${esc(x.r[0])}"><div class="l"><div>${esc(L.zhSan(x.st.san, x.st.white))}</div></div><div class="r"><b>${esc(L.fmtPct(x.r[1]))}</b></div></button>`).join('');
+  }
+  const canFrom = !!(pos && node && !pos.over);
+  el.innerHTML = `
+    <div class="pathline">${esc(L.pathZh(s.path) || '（起始局面）')}</div>
+    ${body}
+    <div class="actions"><div class="btns">
+      <button class="btn icon" id="b-prev" aria-label="上一步"${s.path.length ? '' : ' disabled'}>${ICON.prev}</button>
+      <button class="btn primary grow" id="b-from"${canFrom ? '' : ' disabled'}>從這裡練</button>
+      <a class="btn grow" href="${esc(s.back)}">回章節</a>
+    </div></div>`;
+  el.querySelectorAll('[data-san]').forEach(b => b.addEventListener('click', () => browseGo(s, b.dataset.san)));
+  document.getElementById('b-prev').addEventListener('click', () => { s.path.pop(); browseRender(s, false); });
+  document.getElementById('b-from').addEventListener('click', () => {
+    location.hash = `#/learn/${enc(s.rep.id)}/${enc(s.chap.id)}/from/${enc(s.path.join('_'))}`;
+  });
+}
+
+/* ----- 面板 ----- */
+
+function learnPanel(s) {
+  const el = document.getElementById('panel');
+  if (!el) return;
+  if (s.mode === 'browse') { browsePanel(s, el); return; }
+  const backBtn = `<a class="btn grow" href="${esc(s.back)}">${s.chap ? '回章節' : '回上頁'}</a>`;
+  if (s.phase === 'empty') {
+    el.innerHTML = `${msgHtml(s.msg)}<div class="btns actions">${backBtn}</div>`;
+    return;
+  }
+  if (s.phase === 'pre') { previewPanel(s, el); return; }
+  if (s.phase === 'sum') { summaryPanel(s, el, backBtn); return; }
+  if (s.phase === 'lineDone') {
+    const last = s.li >= s.lines.length - 1;
+    el.innerHTML = `
+      <div class="stepbar">第 ${s.li + 1} / ${s.lines.length} 條</div>
+      <div class="result ok"><h3>這條線完成</h3><p>${s.attempt > 1 ? `第 ${s.attempt} 次測驗全對。` : '一次全對。'}</p></div>
+      ${noticeHtml(s)}
+      <div class="pathline">${esc(L.pathZh(s.line.moves.map(m => m.san)))}</div>
+      <div class="btns actions"><button class="btn primary grow" id="l-next">${last ? '完成' : '下一條'}</button></div>`;
+    document.getElementById('l-next').addEventListener('click', () => learnNextLine(s));
+    return;
+  }
+  quizPanel(s, el);
+}
+
+function previewPanel(s, el) {
+  const line = s.line;
+  const k = s.pv;
+  const nx = line.moves[k];
+  let info;
+  if (nx) {
+    const zh = L.zhSan(nx.san, nx.white);
+    const idea = nx.me && nx.node && nx.node.idea ? `<p>${esc(nx.node.idea)}</p>` : '';
+    const share = !nx.me && nx.ratio != null ? `<p>實戰 ${esc(L.fmtPct(nx.ratio))}</p>` : '';
+    info = `<div class="result info"><span class="side-tag">${nx.me ? '你的著法' : '對手著法'}</span><h3>${esc(zh)}</h3>${idea}${share}</div>`;
+  } else {
+    info = '<div class="result ok"><h3>預覽完成</h3><p>接著自己下一遍。</p></div>';
+  }
+  el.innerHTML = `
+    <div class="stepbar">第 ${s.li + 1} / ${s.lines.length} 條　預覽</div>
+    ${info}
+    <div class="pathline">${esc(L.pathZh(line.moves.slice(0, k).map(m => m.san)) || '（還沒走）')}</div>
+    <div class="actions"><div class="btns">
+      <button class="btn icon" id="pv-first" aria-label="回到起點"${k ? '' : ' disabled'}>${ICON.first}</button>
+      <button class="btn icon" id="pv-prev" aria-label="上一步"${k ? '' : ' disabled'}>${ICON.prev}</button>
+      ${nx ? `<button class="btn primary grow" id="pv-next">下一步</button>` : `<button class="btn primary grow" id="pv-go">自己下一遍</button>`}
+    </div></div>`;
+  document.getElementById('pv-first').addEventListener('click', () => pvSet(s, 0, false));
+  document.getElementById('pv-prev').addEventListener('click', () => pvSet(s, Math.max(0, s.pv - 1), false));
+  const nxt = document.getElementById('pv-next');
+  if (nxt) nxt.addEventListener('click', () => pvSet(s, s.pv + 1, true));
+  const go = document.getElementById('pv-go');
+  if (go) go.addEventListener('click', () => learnQuizStart(s));
+}
+
+function quizPanel(s, el) {
+  let head;
+  if (s.mode === 'review') head = `<div class="stepbar">複習　剩餘 ${s.queue.length + (s.asking ? 1 : 0)} 題</div>`;
+  else head = `<div class="stepbar">第 ${s.li + 1} / ${s.lines.length} 條　測驗${s.attempt > 1 ? `（第 ${s.attempt} 次）` : ''}</div>`;
+  const sans = s.line ? s.line.moves.slice(0, s.mi).map(m => m.san) : [];
+  el.innerHTML = `
+    ${head}
+    ${msgHtml(s.msg)}
+    <div class="pathline">${esc(L.pathZh(sans) || '（還沒走）')}</div>
+    <div class="btns actions">
+      <button class="btn grow" id="lq-give"${s.busy || !s.q || s.revealed ? ' disabled' : ''}>解答</button>
+      ${s.mode === 'new' ? '<button class="btn grow" id="lq-pre">重看預覽</button>' : ''}
+    </div>`;
+  document.getElementById('lq-give').addEventListener('click', () => learnGiveUp(s));
+  const pre = document.getElementById('lq-pre');
+  if (pre) pre.addEventListener('click', () => { stopTimer(); learnPreview(s); });
+}
+
+function summaryPanel(s, el, backBtn) {
+  const st = s.stats;
+  let title, text, again = '';
+  if (s.mode === 'review') {
+    title = '複習完成';
+    text = `共 ${s.total} 題，你下了 ${st.asked} 步，一次就對 ${st.clean} 步。`;
+  } else {
+    title = s.mode === 'from' ? '練習完成' : '這一批完成';
+    text = `共 ${s.lines.length} 條線，你下了 ${st.asked} 步，一次就對 ${st.clean} 步。`;
+    const more = s.mode === 'new' ? L.newLines(s.rep, s.chap, s.thr, 1).length : 0;
+    if (s.mode === 'new') again = `<button class="btn primary grow" id="l-more"${more ? '' : ' disabled'}>再學一批</button>`;
+    else again = '<button class="btn primary grow" id="l-more">再練一次</button>';
+  }
+  el.innerHTML = `
+    <div class="result ok"><h3>${title}</h3><p>${text}</p></div>
+    ${noticeHtml(s)}
+    <div class="btns actions">${again}${backBtn}</div>`;
+  const more = document.getElementById('l-more');
+  if (more) more.addEventListener('click', () => {
+    if (s.mode === 'new') learnStartNew(s); else learnStartFrom(s, s.fromPath || []);
+  });
+}
+
 /* ---------- 設定 ---------- */
 
 function download(name, text) {
@@ -1417,6 +2152,10 @@ function pageSettings() {
       <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
       <div class="board-slot" id="theme-prev" style="margin-top:10px"></div>
     </div>
+    <div class="card"><h3 style="margin-top:0">學習模式</h3>
+      <label class="small muted" for="lbatch">每批學幾條新線</label>
+      <select id="lbatch">${[1, 2, 3, 4, 5, 6, 8, 10].map(n => `<option value="${n}"${set.learnBatch === n ? ' selected' : ''}>${n} 條</option>`).join('')}</select>
+    </div>
     <div class="card"><h3 style="margin-top:0">音效診斷</h3>
       <div class="btns"><button class="btn grow" id="t-rec">測試錄音</button><button class="btn grow" id="t-syn">測試合成音</button><button class="btn grow" id="t-el">測試媒體播放</button></div>
       <pre class="small muted" id="t-out" style="white-space:pre-wrap;margin:6px 0 0"></pre>
@@ -1450,6 +2189,7 @@ function pageSettings() {
   document.getElementById('t-el').addEventListener('click', async () => { const r = await audio.testElement(); showDiag('媒體播放：' + r); });
   showDiag();
   document.getElementById('evb').addEventListener('change', ev => store.setSetting('evalbar', ev.target.checked));
+  document.getElementById('lbatch').addEventListener('change', ev => store.setSetting('learnBatch', Math.max(1, Math.min(10, Number(ev.target.value) || 4))));
   document.getElementById('ui').addEventListener('change', ev => {
     const v = ev.target.value;
     store.setSetting('ui', v === 'light' || v === 'dark' ? v : 'auto');

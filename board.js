@@ -27,7 +27,8 @@ function pieceImg(code) {
 }
 
 // cfg: { fen, orientation, last:{from,to}, check:sq, hl:[sq…]（提示用的藍框）, status:'ok'|'bad'|'',
-//        interactive, turn:'w'|'b', legal:(sq)=>verboseMoves, onMove:(from,to,promo)=>void, animate }
+//        interactive, turn:'w'|'b', legal:(sq)=>verboseMoves, onMove:(from,to,promo)=>void, animate,
+//        arrows:[{from,to,color?,opacity?}]（疊在棋盤上的箭頭，不傳就不畫）}
 export class Board {
   constructor(host, { mini = false } = {}) {
     this.host = host;
@@ -70,6 +71,7 @@ export class Board {
       }
     }
     this.el = el;
+    this.arrowSvg = null;
     if (!this.mini) {
       el.addEventListener('pointerdown', e => this._down(e));
       el.addEventListener('pointermove', e => this._move(e));
@@ -148,6 +150,7 @@ export class Board {
     this.el.classList.toggle('bad', cfg.status === 'bad');
     this.el.classList.toggle('interactive', !!cfg.interactive);
     this.paint();
+    this._drawArrows(cfg.arrows);
     const anim = cfg.animate && !this._skip;
     if (anim && cfg.last && Object.keys(old).length) this._animateMove(old, now, cfg.last);
   }
@@ -166,6 +169,50 @@ export class Board {
       if (this.d && this.d.dragging && name === this.d.from) cls += ' src';
       if (name === this.over) cls += ' over';
       d.className = cls;
+    }
+  }
+
+  /* ---------- 箭頭（SVG 疊在棋盤上，座標 0–8 對應 8×8 格）---------- */
+
+  _drawArrows(arrows) {
+    const list = Array.isArray(arrows) ? arrows.filter(a => a && this.sq[a.from] && this.sq[a.to] && a.from !== a.to) : [];
+    if (!list.length) {
+      if (this.arrowSvg) { this.arrowSvg.remove(); this.arrowSvg = null; }
+      return;
+    }
+    const NS = 'http://www.w3.org/2000/svg';
+    if (!this.arrowSvg) {
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'arrows');
+      svg.setAttribute('viewBox', '0 0 8 8');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.setAttribute('aria-hidden', 'true');
+      this.el.appendChild(svg);
+      this.arrowSvg = svg;
+    }
+    const svg = this.arrowSvg;
+    svg.replaceChildren();
+    for (const a of list) {
+      const p = this._cell(a.from), q = this._cell(a.to);
+      const x0 = p.c + 0.5, y0 = p.r + 0.5, x1 = q.c + 0.5, y1 = q.r + 0.5;
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+      const nx = -uy, ny = ux;
+      const w = 0.085;               // 箭身半寬
+      const hw = 0.23, hl = 0.36;    // 箭頭半寬、長度
+      const sx = x0 + ux * 0.2, sy = y0 + uy * 0.2;      // 起點離棋子中心一點，不蓋住棋子
+      const tx = x1 - ux * 0.08, ty = y1 - uy * 0.08;    // 尖端
+      const bx = tx - ux * hl, by = ty - uy * hl;        // 箭頭底邊中心
+      const pts = [
+        [sx + nx * w, sy + ny * w], [bx + nx * w, by + ny * w], [bx + nx * hw, by + ny * hw],
+        [tx, ty],
+        [bx - nx * hw, by - ny * hw], [bx - nx * w, by - ny * w], [sx - nx * w, sy - ny * w],
+      ];
+      const poly = document.createElementNS(NS, 'polygon');
+      poly.setAttribute('points', pts.map(v => v[0].toFixed(3) + ',' + v[1].toFixed(3)).join(' '));
+      poly.style.fill = a.color || '#e8912d';
+      poly.style.opacity = String(a.opacity == null ? 0.85 : a.opacity);
+      svg.appendChild(poly);
     }
   }
 
