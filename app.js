@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.5.0'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.5.1'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -1965,6 +1965,21 @@ function browseRender(s, animate) {
   updatePanel(s);
 }
 
+// 分支旁的練習狀態：到期優先，其次已熟／未學；不在目前等級的標「第 N 級」
+function branchTag(s, sans) {
+  const levels = (state.learnData && state.learnData.levels) || [];
+  const p = L.branchProgress(s.rep, sans, s.thr, levels);
+  if (!p) return '';
+  if (p.needLevel !== undefined) return `<span class="btag lv">${p.needLevel ? `第 ${p.needLevel} 級` : '範圍外'}</span>`;
+  if (!p.total) return '';
+  let t;
+  if (p.due) t = `<span class="btag d"><i></i>到期 ${p.due}</span>`;
+  else if (p.known === p.total) t = `<span class="btag k"><i></i>已熟</span>`;
+  else if (!p.known) t = `<span class="btag n"><i></i>未學 ${p.fresh}</span>`;
+  else t = `<span class="btag k"><i></i>已熟 ${p.known}/${p.total}</span>`;
+  return t;
+}
+
 function browseGo(s, san) {
   s.path.push(san);
   if (!L.positionAt(s.rep, s.path)) { s.path.pop(); return; }
@@ -1987,17 +2002,21 @@ function browsePanel(s, el) {
       .map(([a]) => ({ san: a, st: L.step(pos.fen, a) }))
       .filter(x => x.st);
     body = `<div class="small muted" style="margin:6px 0 2px">輪到你</div>
-      <button class="row brow" data-san="${esc(node.best)}"><div class="l"><div>你的走法：${esc(zh)}</div>${node.idea ? `<div class="small muted">${esc(node.idea)}</div>` : ''}</div></button>
+      <button class="row brow" data-san="${esc(node.best)}"><div class="l"><div>你的走法：${esc(zh)}</div>${node.idea ? `<div class="small muted">${esc(node.idea)}</div>` : ''}</div><div class="r">${branchTag(s, [...s.path, node.best])}</div></button>
       ${alts.length ? `<div class="alts"><span>也可以：</span>${alts.map(x => `<button class="chip" data-san="${esc(x.san)}">${esc(L.zhSan(x.st.san, x.st.white))}</button>`).join('')}</div>` : ''}`;
   } else {
     const rows = (node.replies || []).filter(r => Number(r[1]) > 0).sort((a, b) => b[1] - a[1])
       .map(r => ({ r, st: L.step(pos.fen, r[0]) })).filter(x => x.st);
     body = `<div class="small muted" style="margin:6px 0 2px">對手可能走</div>`
-      + rows.map(x => `<button class="row brow" data-san="${esc(x.r[0])}"><div class="l"><div>${esc(L.zhSan(x.st.san, x.st.white))}</div></div><div class="r"><b>${esc(L.fmtPct(x.r[1]))}</b></div></button>`).join('');
+      + rows.map(x => {
+        const tag = branchTag(s, [...s.path, x.r[0]]);
+        return `<button class="row brow${tag.includes('btag lv') ? ' off' : ''}" data-san="${esc(x.r[0])}"><div class="l"><div>${esc(L.zhSan(x.st.san, x.st.white))}</div>${tag ? `<div>${tag}</div>` : ''}</div><div class="r"><b>${esc(L.fmtPct(x.r[1]))}</b></div></button>`;
+      }).join('');
   }
   const canFrom = !!(pos && node && !pos.over);
   el.innerHTML = `
     <div class="pathline">${esc(L.pathZh(s.path) || '（起始局面）')}</div>
+    ${(() => { const t = pos && node && !pos.over ? branchTag(s, s.path) : ''; return t ? `<div class="small muted bsum">這個局面以下：${t}</div>` : ''; })()}
     ${body}
     <div class="actions"><div class="btns">
       <button class="btn icon" id="b-prev" aria-label="上一步"${s.path.length ? '' : ' disabled'}>${ICON.prev}</button>

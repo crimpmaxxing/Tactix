@@ -257,6 +257,29 @@ export function progressOf(items, now = Date.now()) {
   return p;
 }
 
+// 某局面（sans：從起點的著法）以下、門檻 thr 內的練習進度（分支瀏覽用）。
+// 回傳 {total,known,due,fresh}；局面到達率低於門檻時回 {needLevel}（0＝不在任何一級）。
+export function branchProgress(rep, sans, thr, levels) {
+  const info = prefixInfo(rep, sans);
+  if (!info) return null;
+  if (info.reach < thr - EPS) {
+    const k = (levels || []).findIndex(t => info.reach >= t - EPS);
+    return { needLevel: k + 1 };
+  }
+  const lines = [];
+  buildLines(rep, info, thr, lines);
+  const seen = new Map();
+  const last = info.moves[info.moves.length - 1];
+  if (last && last.me && last.id) seen.set(last.id, last);
+  for (const line of lines) {
+    for (let i = line.start; i < line.moves.length; i++) {
+      const m = line.moves[i];
+      if (m.me && m.id && !seen.has(m.id)) seen.set(m.id, m);
+    }
+  }
+  return progressOf([...seen.values()]);
+}
+
 export function repProgress(rep, ld, thr, now = Date.now()) {
   return progressOf(repMoves(rep, ld, thr), now);
 }
