@@ -4,7 +4,7 @@ import { Board, renderBoard } from './board.js';
 import * as audio from './audio.js';
 import * as T from './trainer.js';
 
-export const APP_VERSION = '2.0.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.0.2'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -135,6 +135,15 @@ function prepPuzzle(p) {
   p.best_line_san = Array.isArray(p.best_line_san) && p.best_line_san.length ? p.best_line_san : [p.best_san];
   p.tags = Array.isArray(p.tags) ? p.tags : [];
   if (Array.isArray(p.line_san) && p.line_san.length) p.best_line_san = p.line_san;
+  // 對手上一步（題目開始時先播一次，並一直標示）
+  p._prev = null;
+  if (p.prev_fen && p.prev_san) {
+    try {
+      const g = new Chess(p.prev_fen);
+      const m = g.move(p.prev_san);
+      if (T.fen4(g.fen()) === T.fen4(p.fen)) p._prev = { fen: p.prev_fen, last: { from: m.from, to: m.to }, cap: !!m.captured };
+    } catch (e) { p._prev = null; }
+  }
   const b = buildSteps(p);
   p._steps = b.steps;
   p._legacy = b.legacy;
@@ -185,6 +194,16 @@ function dueCount() {
 
 /* ---------- 路由 ---------- */
 
+// 手機上的棋盤頁不捲動：量出頂列與分頁列之間的高度給 CSS 用
+function updateFitH() {
+  const top = document.querySelector('.topbar');
+  const tab = document.querySelector('.tabbar');
+  const h = window.innerHeight - (top ? top.offsetHeight : 0) - (tab ? tab.offsetHeight : 0);
+  document.documentElement.style.setProperty('--fit-h', Math.max(300, h) + 'px');
+}
+window.addEventListener('resize', updateFitH);
+window.addEventListener('orientationchange', () => setTimeout(updateFitH, 200));
+
 function route() {
   stopTimer();
   const parts = location.hash.replace(/^#\/?/, '').split('/');
@@ -193,7 +212,10 @@ function route() {
   window.scrollTo(0, 0);
   const isDrill = page === 'openings' && parts[1] === 'drill';
   if (!isDrill || parts[2] === undefined) state.drill = null;
-  $view.classList.toggle('wide', page === 'practice' || (isDrill && parts[2] !== undefined));
+  const boardPage = page === 'practice' || (isDrill && parts[2] !== undefined);
+  $view.classList.toggle('wide', boardPage);
+  document.body.classList.toggle('fit', boardPage);
+  updateFitH();
   try {
     if (isDrill && parts[2] !== undefined) pageDrill(decodeURIComponent(parts[2]));
     else if (isDrill) pageDrillList();
@@ -500,7 +522,9 @@ function nextPuzzle() {
     orientation: p.color === 'black' ? 'black' : 'white',
     game: new Chess(qs[0].fen),
     base: 0,
-    last: null,
+    last: p._prev ? p._prev.last : null,
+    baseLast: p._prev ? p._prev.last : null,   // 這一步開始時要標示的「對手上一步」
+    intro: !!p._prev,  // 還沒播過對手上一步
     hl: [],
     errs: 0,           // 這一步答錯幾次
     revealed: false,   // 這一步答案是否已經顯示
@@ -520,7 +544,7 @@ function nextPuzzle() {
 
 function lineFens(p) {
   const g = new Chess(p.fen);
-  const arr = [{ fen: g.fen(), last: null }];
+  const arr = [{ fen: g.fen(), last: p._prev ? p._prev.last : null }];
   for (const s of p.best_line_san) {
     try {
       const m = g.move(s);
@@ -563,6 +587,24 @@ function drawPuzzle() {
     <div id="panel"></div>
     <p class="small muted">今天到期 ${dueN} 題${state.forced.length ? '（含指定題目）' : ''}</p>`;
   state.board = new Board(document.getElementById('board'));
+  if (c.intro && c.idx === 0 && !c.done) {
+    // 先擺出對手走之前的局面，再把對手那一步滑過去
+    c.intro = false;
+    c.game = new Chess(p._prev.fen);
+    c.last = null;
+    c.busy = true;
+    updateBoard(c);
+    updatePanel(c);
+    later(c, 450, () => {
+      c.game = new Chess(c.q.fen);
+      c.last = c.baseLast;
+      c.busy = false;
+      updateBoard(c, { animate: true });
+      audio.play(p._prev.cap ? 'capture' : 'move');
+      updatePanel(c);
+    });
+    return;
+  }
   updateBoard(c);
   updatePanel(c);
 }
@@ -581,14 +623,6 @@ function alive(s) {
 // 排程一個動作；離開頁面時 stopTimer 會全部取消
 function later(s, ms, fn) {
   state.tmos.push(setTimeout(() => { if (alive(s)) fn(); }, ms));
-}
-
-function ensureVisible() {
-  if (window.innerWidth >= 900) return;   // 寬螢幕本來就看得到
-  const el = document.getElementById('panel');
-  if (el && el.scrollIntoView) {
-    try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* 忽略 */ }
-  }
 }
 
 function kingSquare(g, color) {
@@ -640,7 +674,7 @@ function playMove(s, san) {
 // 退回這一題的起點（把這一題之後走的著都收回）
 function rewind(s) {
   while (s.game.history().length > s.base) s.game.undo();
-  s.last = null;
+  s.last = s.baseLast || null;
 }
 
 function recId(s) { return s.kind === 'puzzle' ? s.puzzle.id : s.nodeId; }
@@ -754,7 +788,6 @@ function recText(rec) {
 function updatePanel(s, scroll = false) {
   if (s.kind === 'puzzle') puzzlePanel(s);
   else drillPanel(s);
-  if (scroll) ensureVisible();
 }
 
 /* ---------- 練習題（多步）---------- */
@@ -781,6 +814,8 @@ function startStep(c, i) {
   c.q = c.qs[i];
   c.game = new Chess(c.q.fen);   // 局面與剛才相同，只是換成新的起點
   c.base = 0;
+  c.baseLast = i === 0 ? (c.puzzle._prev ? c.puzzle._prev.last : null) : c.last;
+  c.last = c.baseLast;
   c.errs = 0;
   c.revealed = false;
   c.busy = false;
@@ -813,7 +848,7 @@ function puzzlePanel(c) {
       ${total > 1 ? `<div class="stepbar">第 ${c.idx + 1} / ${total} 步</div>` : ''}
       ${msgHtml(c.msg)}
       ${hintHtml(c)}
-      <div class="btns"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>看答案</button></div>`;
+      <div class="btns actions"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>看答案</button></div>`;
     document.getElementById('giveup').addEventListener('click', () => giveUp(c));
     return;
   }
@@ -837,16 +872,18 @@ function puzzlePanel(c) {
       ${link}
     </div>
     ${hasLine ? `<div class="card"><b>最佳主變</b>
-      <div class="line">${fmtLine(p, idx)}</div>
-      <div class="btns">
+      <div class="line">${fmtLine(p, idx)}</div></div>` : ''}
+    <div class="actions">
+      ${hasLine ? `<div class="btns">
         <button class="btn" id="l-first" aria-label="回到起點">⏮</button>
         <button class="btn" id="l-prev" aria-label="上一步">◀</button>
         <button class="btn" id="l-next" aria-label="下一步">▶</button>
-        <button class="btn grow" id="l-play">自動播放</button>
-      </div></div>` : ''}
-    <div class="btns">
-      ${!ok ? '<button class="btn grow" id="retry">重試這題</button>' : ''}
-      <button class="btn primary grow" id="next">下一題</button>
+        <button class="btn grow" id="l-play">播放主變</button>
+      </div>` : ''}
+      <div class="btns">
+        ${!ok ? '<button class="btn grow" id="retry">重試這題</button>' : ''}
+        <button class="btn primary grow" id="next">下一題</button>
+      </div>
     </div>`;
   const max = hasLine ? c.lineFens.length - 1 : 0;
   const go = i => {
@@ -1011,6 +1048,7 @@ function drillAdvance(s) {
     s.q = q;
     s.nodeId = nodeId(s.rep, key);
     s.base = s.game.history().length;
+    s.baseLast = s.last;
     s.errs = 0;
     s.revealed = false;
     s.failed = false;
@@ -1102,7 +1140,7 @@ function drillPanel(s) {
         <p>你走了 ${st.me} 步，一次就對的有 ${st.clean} 步。</p></div>
       ${msgHtml(s.msg)}
       ${list}
-      <div class="btns">
+      <div class="btns actions">
         <button class="btn primary grow" id="again">再練一次</button>
         <a class="btn grow" href="#/openings/drill">換一套</a>
       </div>`;
@@ -1113,7 +1151,7 @@ function drillPanel(s) {
     ${msgHtml(s.msg)}
     ${hintHtml(s)}
     ${list}
-    <div class="btns">
+    <div class="btns actions">
       <button class="btn grow" id="giveup"${s.busy || s.revealed || !s.q ? ' disabled' : ''}>看答案</button>
       <button class="btn grow" id="restart">重新開始</button>
     </div>`;

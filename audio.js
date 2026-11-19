@@ -59,10 +59,10 @@ export function play(kind) {
     const t = c.currentTime + 0.005;
     if (kind === 'capture') {
       noise(c, t, { dur: 0.10, gain: 0.7, freq: 1100, q: 0.8 });
-      tone(c, t, { type: 'triangle', f0: 190, f1: 70, dur: 0.14, gain: 0.55 });
+      tone(c, t, { type: 'triangle', f0: 520, f1: 280, dur: 0.10, gain: 0.3 });   // 不用 200 Hz 以下，iPhone 喇叭會像在震
     } else {
       noise(c, t, { dur: 0.04, gain: 0.35, freq: 1800, kind: 'lowpass' });
-      tone(c, t, { type: 'triangle', f0: 440, f1: 190, dur: 0.07, gain: 0.4 });
+      tone(c, t, { type: 'triangle', f0: 700, f1: 380, dur: 0.06, gain: 0.3 });
     }
   } catch (e) { /* 音效失敗不影響操作 */ }
 }

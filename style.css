@@ -98,11 +98,12 @@ main {
 .tabbar a {
   flex: 1; min-height: var(--tab-h);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  color: var(--muted); text-decoration: none; font-size: .75rem; gap: 2px;
-  touch-action: manipulation;
+  color: var(--muted); text-decoration: none; font-size: .68rem; letter-spacing: .04em; gap: 3px;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
-.tabbar a .ico { font-size: 1.3rem; line-height: 1; }
+.tabbar a .ico { width: 23px; height: 23px; transition: transform .15s ease; }
 .tabbar a.on { color: var(--accent); font-weight: 600; }
+.tabbar a.on .ico { stroke-width: 2.2; transform: translateY(-1px); }
 
 .card > h3:first-child { margin-top: 0; }
 .card {
@@ -246,4 +247,35 @@ textarea { width: 100%; min-height: 80px; font: inherit; }
   .split .board-wrap { max-width: none; margin: 4px 0; }
   .split-info .card, .split-info .result, .split-info .hintbox { margin: 8px 0; }
   .split-info { padding-top: 6px; }
+}
+
+/* 手機棋盤頁：一頁塞滿、不捲動。按鈕固定在面板底部，長文字在面板內捲動。 */
+@media (max-width: 899px) {
+  body.fit { overflow: hidden; overscroll-behavior: none; }
+  main.wide {
+    height: var(--fit-h, calc(100dvh - 110px));
+    padding: 4px 16px 6px; box-sizing: border-box;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  main.wide .split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  main.wide .split-board { flex: none; }
+  main.wide .turn { margin: 2px 0 4px; font-size: .9rem; }
+  main.wide .board-wrap {
+    width: min(100%, calc(var(--fit-h, 600px) - 250px)); min-width: 220px;
+    margin: 0 auto 4px;
+  }
+  main.wide .split-info { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  main.wide #pz { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  main.wide #pz > p { margin: 2px 0; }
+  main.wide #panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; -webkit-overflow-scrolling: touch; }
+  main.wide #panel .actions {
+    margin-top: auto; position: sticky; bottom: 0; z-index: 1;
+    background: var(--bg); padding-top: 4px;
+  }
+  main.wide #panel .actions .btns { margin: 4px 0; }
+  main.wide #panel .btns.actions { margin: auto 0 4px; }
+  main.wide .result, main.wide .hintbox, main.wide .card { margin: 4px 0; padding: 8px 12px; }
+  main.wide .result h3 { font-size: 1rem; }
+  main.wide .stepbar { margin: 2px 0 0; }
+  main.wide #flt .filters { margin: 4px 0 0; padding: 6px 12px; }
 }
