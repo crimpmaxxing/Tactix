@@ -1,6 +1,6 @@
 // 改版時把 VERSION 加一，舊的程式快取會在 activate 時刪掉。
 // data/*.json 放在另一個快取（DATA_CACHE），改版時不清掉，避免離線時丟失資料。
-const VERSION = 'v2.3.0';
+const VERSION = 'v2.3.1';
 const STATIC_CACHE = 'chesscoach-static-' + VERSION;
 const DATA_CACHE = 'chesscoach-data';
 
@@ -20,6 +20,7 @@ const STATIC_ASSETS = [
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',
   'vendor/chess.js',
+  'sounds/move.wav', 'sounds/capture-1.wav', 'sounds/capture-2.wav', 'sounds/capture-3.wav',
   ...['w', 'b'].flatMap(c => ['K', 'Q', 'R', 'B', 'N', 'P'].map(t => `vendor/pieces/${c}${t}.svg`)),
 ];
 // 引擎檔（可能還沒放），抓不到不擋安裝

@@ -1,4 +1,5 @@
-// 音效：用 Web Audio 現場合成兩種短音（走子、吃子），不使用音檔。
+// 音效：優先播真實錄音（sounds/*.wav，Freesound CC0，見 vendor/LICENSES.md）；
+// 錄音載入失敗時退回 Web Audio 合成音。
 import * as store from './store.js';
 
 let ctx = null;
@@ -9,6 +10,7 @@ function ensure() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       ctx = new AC();
+      loadAll(ctx);
     }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
@@ -52,26 +54,44 @@ function noise(c, t, { dur, gain, freq, q = 1, kind = 'bandpass' }) {
   src.stop(t + dur + 0.02);
 }
 
-// 吃子音效三選一（設定頁可試聽）。全部在 260 Hz 以上，避免 iPhone 喇叭像在震。
-export const CAPTURE_STYLES = { wood: '木頭（兩下敲擊）', crisp: '清脆', soft: '柔和' };
-const CAPTURE = {
-  // 棋子落下、再碰到被吃的子：先硬後鈍的兩下
-  wood(c, t) {
-    noise(c, t, { dur: 0.035, gain: 0.5, freq: 2600, q: 1.4 });
-    tone(c, t, { type: 'sine', f0: 1150, f1: 820, dur: 0.05, gain: 0.2 });
-    noise(c, t + 0.045, { dur: 0.06, gain: 0.45, freq: 1500, q: 1.1 });
-    tone(c, t + 0.045, { type: 'triangle', f0: 560, f1: 380, dur: 0.08, gain: 0.22 });
-  },
-  crisp(c, t) {
-    noise(c, t, { dur: 0.025, gain: 0.55, freq: 3800, q: 2 });
-    tone(c, t, { type: 'sine', f0: 1900, f1: 1300, dur: 0.045, gain: 0.16 });
-    tone(c, t + 0.01, { type: 'sine', f0: 950, f1: 700, dur: 0.07, gain: 0.15 });
-  },
-  soft(c, t) {
-    noise(c, t, { dur: 0.08, gain: 0.32, freq: 1100, q: 0.7, kind: 'lowpass' });
-    tone(c, t, { type: 'sine', f0: 480, f1: 300, dur: 0.11, gain: 0.24 });
-  },
-};
+// 真實錄音：同一段走子錄音（JJTaynos, Freesound #733927, CC0）切出的單次落子
+const FILES = { move: 'sounds/move.wav', rec1: 'sounds/capture-1.wav', rec2: 'sounds/capture-2.wav', rec3: 'sounds/capture-3.wav' };
+const bufs = {};
+let loading = null;
+function loadAll(c) {
+  if (loading) return loading;
+  loading = Promise.all(Object.entries(FILES).map(async ([k, u]) => {
+    try {
+      const ab = await (await fetch(u)).arrayBuffer();
+      bufs[k] = await new Promise((res, rej) => c.decodeAudioData(ab, res, rej));
+    } catch (e) { /* 這個檔案用合成音代替 */ }
+  }));
+  return loading;
+}
+function playBuf(c, key, t) {
+  const b = bufs[key];
+  if (!b) return false;
+  const src = c.createBufferSource();
+  src.buffer = b;
+  src.connect(c.destination);
+  src.start(t);
+  return true;
+}
+
+// Capture 音效三選一（設定頁可試聽）
+export const CAPTURE_STYLES = { rec1: 'A・Deep', rec2: 'B・Bright', rec3: 'C・Medium' };
+
+// 合成音（錄音載入失敗時用）。全部在 260 Hz 以上，避免 iPhone 喇叭像在震。
+function synthCapture(c, t) {
+  noise(c, t, { dur: 0.035, gain: 0.5, freq: 2600, q: 1.4 });
+  tone(c, t, { type: 'sine', f0: 1150, f1: 820, dur: 0.05, gain: 0.2 });
+  noise(c, t + 0.045, { dur: 0.06, gain: 0.45, freq: 1500, q: 1.1 });
+  tone(c, t + 0.045, { type: 'triangle', f0: 560, f1: 380, dur: 0.08, gain: 0.22 });
+}
+function synthMove(c, t) {
+  noise(c, t, { dur: 0.04, gain: 0.35, freq: 1800, kind: 'lowpass' });
+  tone(c, t, { type: 'triangle', f0: 700, f1: 380, dur: 0.06, gain: 0.3 });
+}
 
 // kind: 'move' | 'capture'；style 只給試聽用
 export function play(kind, style) {
@@ -81,10 +101,7 @@ export function play(kind, style) {
   try {
     const t = c.currentTime + 0.005;
     if (kind === 'capture') {
-      (CAPTURE[style || store.getSettings().capture] || CAPTURE.wood)(c, t);
-    } else {
-      noise(c, t, { dur: 0.04, gain: 0.35, freq: 1800, kind: 'lowpass' });
-      tone(c, t, { type: 'triangle', f0: 700, f1: 380, dur: 0.06, gain: 0.3 });
-    }
+      if (!playBuf(c, style || store.getSettings().capture, t)) synthCapture(c, t);
+    } else if (!playBuf(c, 'move', t)) synthMove(c, t);
   } catch (e) { /* 音效失敗不影響操作 */ }
 }
