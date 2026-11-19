@@ -6,7 +6,7 @@ import * as T from './trainer.js';
 import * as engine from './engine.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.3.2'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.4.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -63,7 +63,7 @@ const state = {
   openings: null,   // openings.json 的 repertoires 陣列；讀不到是 null
   tmos: [],         // 排程中的延遲動作
   drill: null,      // 「從頭練」目前的練習
-  filter: { category: '', opening: '', openingOnly: false },
+  filter: { category: '', opening: '', openingOnly: false, motif: '' },
   forced: [],      // 從開局頁指定要練的題目
   extra: false,    // 今天到期的都做完後，是否繼續練未到期的
   cur: null,       // 目前這一題的狀態
@@ -136,6 +136,8 @@ function prepPuzzle(p) {
   p.accept_san = Array.isArray(p.accept_san) && p.accept_san.length ? p.accept_san : [p.best_san];
   p.best_line_san = Array.isArray(p.best_line_san) && p.best_line_san.length ? p.best_line_san : [p.best_san];
   p.tags = Array.isArray(p.tags) ? p.tags : [];
+  p.motifs = Array.isArray(p.motifs) ? p.motifs : [];
+  p.allowed = Array.isArray(p.allowed) ? p.allowed : [];
   if (Array.isArray(p.line_san) && p.line_san.length) p.best_line_san = p.line_san;
   // 對手上一步（題目開始時先播一次，並一直標示）
   p._prev = null;
@@ -277,7 +279,12 @@ function pageOverview() {
   setTitle('Tactix');
   const r = state.report;
   if (!r && !state.stats) { $view.innerHTML = noData('分析報告'); return; }
-  renderOverview($view, { report: r, stats: state.stats, due: dueCount(), CAT, PHASE, fmtDate });
+  const missed = new Map(), allowed = new Map();
+  for (const p of state.puzzles) {
+    for (const m of p.motifs) missed.set(m, (missed.get(m) || 0) + 1);
+    for (const m of p.allowed) allowed.set(m, (allowed.get(m) || 0) + 1);
+  }
+  renderOverview($view, { report: r, stats: state.stats, due: dueCount(), CAT, PHASE, fmtDate, motifs: { missed, allowed, total: state.puzzles.length } });
 }
 
 /* ---------- 開局 ---------- */
@@ -378,7 +385,7 @@ function pageOpeningDetail(idx) {
   });
   const all = document.getElementById('pr-all');
   if (all) all.addEventListener('click', () => {
-    state.filter = { category: '', opening: o.name, openingOnly: false };
+    state.filter = { category: '', opening: o.name, openingOnly: false, motif: '' };
     state.extra = false;
     state.forced = [];
     state.cur = null;
@@ -392,6 +399,7 @@ function filtered() {
   const f = state.filter;
   return state.puzzles.filter(p =>
     (!f.category || p.category === f.category) &&
+    (!f.motif || p.motifs.includes(f.motif)) &&
     (!f.opening || p.opening === f.opening) &&
     (!f.openingOnly || p.tags.includes('opening') || Number(p.move_no) <= 10));
 }
@@ -423,9 +431,15 @@ function nextDueText() {
   return `下一題最快 ${days} 天後到期。`;
 }
 
+function motifCounts() {
+  const c = new Map();
+  for (const p of state.puzzles) for (const m of p.motifs) c.set(m, (c.get(m) || 0) + 1);
+  return [...c.entries()].sort((a, b) => b[1] - a[1]);
+}
+
 function filterOn() {
   const f = state.filter;
-  return !!(f.category || f.opening || f.openingOnly);
+  return !!(f.category || f.opening || f.openingOnly || f.motif);
 }
 
 function closeSheet() {
@@ -443,15 +457,15 @@ function openFilter() {
     <div class="btns"><button class="btn grow" id="f-reset">重設</button><button class="btn primary grow" id="f-done">完成</button></div>
   </div>`;
   document.body.appendChild(scrim);
-  const cat = scrim.querySelector('#f-cat'), op = scrim.querySelector('#f-op'), oo = scrim.querySelector('#f-open');
+  const cat = scrim.querySelector('#f-cat'), op = scrim.querySelector('#f-op'), oo = scrim.querySelector('#f-open'), mo = scrim.querySelector('#f-mot');
   scrim.addEventListener('click', e => { if (e.target === scrim) closeSheet(); });
   scrim.querySelector('#f-x').addEventListener('click', closeSheet);
-  scrim.querySelector('#f-reset').addEventListener('click', () => { cat.value = ''; op.value = ''; oo.checked = false; });
+  scrim.querySelector('#f-reset').addEventListener('click', () => { cat.value = ''; op.value = ''; mo.value = ''; oo.checked = false; });
   scrim.querySelector('#f-done').addEventListener('click', () => {
-    const nf = { category: cat.value, opening: op.value, openingOnly: oo.checked };
+    const nf = { category: cat.value, opening: op.value, openingOnly: oo.checked, motif: mo.value };
     const f = state.filter;
     closeSheet();
-    if (nf.category === f.category && nf.opening === f.opening && nf.openingOnly === !!f.openingOnly) return;
+    if (nf.category === f.category && nf.opening === f.opening && nf.openingOnly === !!f.openingOnly && nf.motif === (f.motif || '')) return;
     state.filter = nf;
     state.extra = false;
     state.cur = null;
@@ -474,6 +488,8 @@ function filterBlock() {
   return `<div class="filters">
     <label for="f-cat">漏著類型</label>
     <select id="f-cat"><option value="">全部</option>${Object.entries(CAT).map(([k, v]) => `<option value="${k}"${f.category === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
+    <label for="f-mot">戰術</label>
+    <select id="f-mot"><option value="">全部</option>${motifCounts().map(([m, n]) => `<option value="${esc(m)}"${f.motif === m ? ' selected' : ''}>${esc(m)}（${n}）</option>`).join('')}</select>
     <label for="f-op">開局</label>
     <select id="f-op"><option value="">全部</option>${ops.map(o => `<option value="${esc(o)}"${f.opening === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>
     <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看開局階段（前 10 手）</label>
@@ -1048,7 +1064,7 @@ function puzzlePanel(c) {
   }
   const ok = !c.failed;
   const tags = p.tags.map(t => `<span class="pill">${esc(TAG[t] || t)}</span>`).join('');
-  const meta = `${p.category ? `<span class="pill">${esc(CAT[p.category] || p.category)}</span>` : ''}${tags}${p.opening ? `<span class="pill">${esc(p.opening)}</span>` : ''}`;
+  const meta = `${p.motifs.map(m => `<span class="pill motif">${esc(m)}</span>`).join('')}${p.allowed.filter(m => !p.motifs.includes(m)).map(m => `<span class="pill motif opp">對手 ${esc(m)}</span>`).join('')}${p.category ? `<span class="pill">${esc(CAT[p.category] || p.category)}</span>` : ''}${tags}${p.opening ? `<span class="pill">${esc(p.opening)}</span>` : ''}`;
   const hasLine = c.lineFens && c.lineFens.length > 1;
   const idx = c.lineIdx;
   const link = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">chess.com 原局</a>` : '';
@@ -1395,10 +1411,15 @@ function pageSettings() {
       <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 音效</label>
       <label class="small muted" for="cap">吃子音效</label>
       <div class="btns" style="margin-top:4px"><select id="cap" style="flex:1">${Object.entries(audio.CAPTURE_STYLES).map(([k, v]) => `<option value="${k}"${set.capture === k ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="btn" id="cap-play">試聽</button></div>
+      <label class="check"><input type="checkbox" id="imute"${set.ignoreMute ? ' checked' : ''}> 靜音模式仍播放（iOS 17 以上；可能暫停背景音樂）</label>
       <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> 評估條</label>
       <label class="small muted" for="theme">棋盤配色</label>
       <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
       <div class="board-slot" id="theme-prev" style="margin-top:10px"></div>
+    </div>
+    <div class="card"><h3 style="margin-top:0">音效診斷</h3>
+      <div class="btns"><button class="btn grow" id="t-rec">測試錄音</button><button class="btn grow" id="t-syn">測試合成音</button><button class="btn grow" id="t-el">測試媒體播放</button></div>
+      <pre class="small muted" id="t-out" style="white-space:pre-wrap;margin:6px 0 0"></pre>
     </div>
     <div class="card"><h3 style="margin-top:0">資料</h3>
       <p>資料產生時間：${state.report ? esc(fmtDate(state.report.generated)) : '讀不到'}</p>
@@ -1418,6 +1439,16 @@ function pageSettings() {
   });
   document.getElementById('cap').addEventListener('change', ev => { store.setSetting('capture', ev.target.value); audio.unlock(); audio.play('capture', ev.target.value); });
   document.getElementById('cap-play').addEventListener('click', () => { audio.unlock(); audio.play('capture', document.getElementById('cap').value); });
+  document.getElementById('imute').addEventListener('change', ev => { store.setSetting('ignoreMute', ev.target.checked); audio.setIgnoreMute(); audio.unlock(); audio.play('capture', store.getSettings().capture); });
+  const tout = document.getElementById('t-out');
+  const showDiag = extra => {
+    const d = audio.diag();
+    tout.textContent = `版本 ${APP_VERSION}｜音訊 ${d.state}｜取樣率 ${d.rate ?? '—'}｜錄音 ${d.loaded}/${d.total}｜audioSession ${d.session}${d.err ? '\n錯誤：' + d.err : ''}${extra ? '\n' + extra : ''}`;
+  };
+  document.getElementById('t-rec').addEventListener('click', () => { audio.unlock(); const ok = audio.testRecorded(); setTimeout(() => showDiag(ok ? '已送出錄音播放' : '錄音尚未載入'), 300); });
+  document.getElementById('t-syn').addEventListener('click', () => { audio.unlock(); audio.testSynth(); setTimeout(() => showDiag('已送出合成音播放'), 300); });
+  document.getElementById('t-el').addEventListener('click', async () => { const r = await audio.testElement(); showDiag('媒體播放：' + r); });
+  showDiag();
   document.getElementById('evb').addEventListener('change', ev => store.setSetting('evalbar', ev.target.checked));
   document.getElementById('ui').addEventListener('change', ev => {
     const v = ev.target.value;

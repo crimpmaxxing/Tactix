@@ -468,3 +468,8 @@ main.ovpage { max-width: 1080px; }
   padding: 6px 10px; border-radius: 8px; font-size: .8rem; line-height: 1.4;
   background: #141413; color: #f5f4ee; box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
 }
+
+/* 戰術標籤 */
+.pill.motif { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+.pill.motif.opp { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+.hbars.wide .hb { grid-template-columns: 10.5em 1fr 3em; }

@@ -59,9 +59,9 @@ function wdlRows(rows) {
 }
 
 /* ---------- 單色橫條（排序） ---------- */
-function hbars(items, fmt = v => v) {
+function hbars(items, fmt = v => v, cls = '') {
   const max = Math.max(1, ...items.map(x => x.value));
-  return `<div class="hbars">${items.map(x => `<div class="hb" data-tip="${esc(x.label)}：${esc(fmt(x.value))}${x.tip ? '｜' + esc(x.tip) : ''}">
+  return `<div class="hbars ${cls}">${items.map(x => `<div class="hb" data-tip="${esc(x.label)}：${esc(fmt(x.value))}${x.tip ? '｜' + esc(x.tip) : ''}">
     <span class="hb-l">${esc(x.label)}</span><div class="hb-t"><i style="width:${(x.value / max * 100).toFixed(1)}%"></i></div><b>${esc(fmt(x.value))}</b></div>`).join('')}</div>`;
 }
 
@@ -176,7 +176,7 @@ const card = (title, body, foot = '') => `<div class="ov-card">${title ? `<h3>${
 const tile = (value, label, sub = '') => `<div class="tile"><b>${value}</b><span>${esc(label)}</span>${sub ? `<em>${sub}</em>` : ''}</div>`;
 const delta = d => Number.isFinite(d) ? `<span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${Math.abs(d)}</span>（30 天）` : '';
 
-export function renderOverview(view, { report, stats, due, CAT, PHASE, fmtDate }) {
+export function renderOverview(view, { report, stats, due, CAT, PHASE, fmtDate, motifs }) {
   const st = stats || {};
   const tot = st.totals || report?.totals || {};
   const G = (tot.win || 0) + (tot.draw || 0) + (tot.loss || 0);
@@ -242,11 +242,19 @@ export function renderOverview(view, { report, stats, due, CAT, PHASE, fmtDate }
   </div>
   ${card('每 100 手漏著・依手數', columns(br.map(x => ({ label: x.bucket, value: x.per100, sub: `${n0(x.moves)} 手`, tip: `${x.blunders} 次 / ${n0(x.moves)} 手` })), { fmt: v => v.toFixed(1) }))}`);
 
+  // 4b. 戰術
+  const mItems = m => [...(m || new Map()).entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: v }));
+  const mSum = m => [...(m || new Map()).values()].reduce((a, x) => a + x, 0);
+  const s4b = motifs && (mSum(motifs.missed) || mSum(motifs.allowed)) ? section('05', '戰術', `<div class="ov-grid">
+    ${card(`錯過的戰術・${n0(mSum(motifs.missed))}`, hbars(mItems(motifs.missed), v => n0(v), 'wide'))}
+    ${card(`對手的戰術・${n0(mSum(motifs.allowed))}`, hbars(mItems(motifs.allowed), v => n0(v), 'wide'))}
+  </div>`, `取自 ${n0(motifs.total)} 題漏著題目；一題可能含多種戰術。`) : '';
+
   // 5. 時間與心態
   const hours = st.by_hour || {};
   const diff = st.by_rating_diff || {};
   const after = st.after_result || {};
-  const s5 = section('05', '時間與心態', `<div class="ov-grid">
+  const s5 = section('06', '時間與心態', `<div class="ov-grid">
     ${card('各時段得分率（UTC+8）', columns(Object.entries(hours).map(([k, v]) => ({ label: k, value: v.score, sub: `${v.games} 局` })), { fmt: v => pc(v), max: 1, ref: 0.5, refLabel: '50%' }))}
     ${card('依分差得分率（對手 − 你）', columns(Object.entries(diff).map(([k, v]) => ({ label: k, value: v.score, sub: `${v.games} 局` })), { fmt: v => pc(v), max: 1, ref: 0.5, refLabel: '50%' }))}
   </div>
@@ -262,11 +270,11 @@ export function renderOverview(view, { report, stats, due, CAT, PHASE, fmtDate }
     name, color, points: hist.filter(h => h.time_class === k).map(h => ({ t: new Date(h.date).getTime(), v: h.rating })).sort((a, b) => a.t - b.t),
   })).filter(s => s.points.length > 1);
   const acc = (st.accuracy?.by_month || []).filter(m => m.mean != null && m.games >= 5);
-  const s6 = section('06', '走勢', `
+  const s6 = section('07', '走勢', `
     ${card('等級分', lineChart(ser, { label: '等級分' }))}
     ${acc.length > 1 ? card('每月準確度', lineChart([{ name: '準確度', color: 'var(--c2)', points: acc.map(m => ({ t: new Date(m.month + '-15').getTime(), v: m.mean })) }], { label: '每月準確度', yFmt: v => Number(v).toFixed ? Number(v).toFixed(0) : v }), '僅列 ≥ 5 局的月份；Lichess 準確度公式。') : ''}`);
 
-  view.innerHTML = `<div class="ov">${lead}${tiles}${s1}${s2}${s3}${s4}${s5}${s6}
+  view.innerHTML = `<div class="ov">${lead}${tiles}${s1}${s2}${s3}${s4}${s4b}${s5}${s6}
     <p class="ov-gen">更新於 ${esc(fmtDate(st.generated || report?.generated))}</p></div>`;
   const root = view.querySelector('.ov');
   wireTips(root);

@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-19T12:49:40+08:00",
+  "generated": "2026-11-19T13:02:42+08:00",
   "username": "LHTN27",
   "totals": {
     "games": 1387,
@@ -6951,9 +6951,9 @@
     "by_category": {
       "hanging": 906,
       "missed_threat": 407,
-      "missed_tactic": 771,
-      "endgame": 206,
-      "other": 1076
+      "missed_tactic": 892,
+      "endgame": 200,
+      "other": 961
     },
     "with_time_pressure": 183,
     "by_phase": {

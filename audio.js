@@ -3,12 +3,21 @@
 import * as store from './store.js';
 
 let ctx = null;
+let lastErr = '';
+
+// iOS 17+：'playback' 讓網頁音效不受側邊靜音開關影響（但可能暫停背景音樂）；'auto' 照系統規則
+function applySession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = store.getSettings().ignoreMute ? 'playback' : 'auto';
+  } catch (e) { lastErr = 'audioSession: ' + e.message; }
+}
 
 function ensure() {
   try {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
+      applySession();
       ctx = new AC();
       loadAll(ctx);
     }
@@ -78,7 +87,7 @@ function loadAll(c) {
     try {
       const ab = await (await fetch(u)).arrayBuffer();
       bufs[k] = await new Promise((res, rej) => c.decodeAudioData(ab, res, rej));
-    } catch (e) { /* 這個檔案用合成音代替 */ }
+    } catch (e) { lastErr = `${u}: ${e && e.message ? e.message : e}`; }
   }));
   return loading;
 }
@@ -117,5 +126,27 @@ export function play(kind, style) {
     if (kind === 'capture') {
       if (!playBuf(c, style || store.getSettings().capture, t)) synthCapture(c, t);
     } else if (!playBuf(c, 'move', t)) synthMove(c, t);
-  } catch (e) { /* 音效失敗不影響操作 */ }
+  } catch (e) { lastErr = 'play: ' + (e && e.message ? e.message : e); }
+}
+
+/* ---------- 診斷（設定頁用） ---------- */
+export function setIgnoreMute() { applySession(); }
+export function diag() {
+  return {
+    state: ctx ? ctx.state : '尚未建立',
+    rate: ctx ? ctx.sampleRate : null,
+    loaded: Object.keys(bufs).length,
+    total: Object.keys(FILES).length,
+    session: navigator.audioSession ? navigator.audioSession.type : '不支援',
+    err: lastErr,
+  };
+}
+export function testRecorded() { const c = ensure(); if (!c) return false; return playBuf(c, 'rec3', c.currentTime + 0.01); }
+export function testSynth() { const c = ensure(); if (!c) return; synthCapture(c, c.currentTime + 0.01); }
+// 改用 <audio> 元素播放：在 iOS 上不受靜音開關影響
+export function testElement() {
+  try {
+    const a = new Audio(FILES.rec3);
+    return a.play().then(() => 'ok').catch(e => 'fail: ' + e.message);
+  } catch (e) { return Promise.resolve('fail: ' + e.message); }
 }
