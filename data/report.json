@@ -1,13 +1,13 @@
 {
-  "generated": "2026-11-19T13:02:42+08:00",
+  "generated": "2026-11-19T21:33:37+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1387,
-    "blitz": 648,
+    "games": 1401,
+    "blitz": 662,
     "rapid": 739,
-    "win": 714,
-    "draw": 82,
-    "loss": 591
+    "win": 718,
+    "draw": 84,
+    "loss": 599
   },
   "rating_history": [
     {
@@ -6944,36 +6944,106 @@
       "date": "2026-11-18",
       "time_class": "blitz",
       "rating": 922
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 914
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 922
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 914
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 906
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 914
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 907
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 899
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 891
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 900
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 900
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 908
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 899
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 891
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 891
     }
   ],
   "blunders": {
     "per_game": 2.43,
     "by_category": {
-      "hanging": 906,
-      "missed_threat": 407,
-      "missed_tactic": 892,
-      "endgame": 200,
-      "other": 961
+      "hanging": 913,
+      "missed_threat": 413,
+      "missed_tactic": 902,
+      "endgame": 203,
+      "other": 967
     },
-    "with_time_pressure": 183,
+    "with_time_pressure": 186,
     "by_phase": {
-      "opening": 663,
-      "middlegame": 2271,
-      "endgame": 432
+      "opening": 668,
+      "middlegame": 2292,
+      "endgame": 438
     },
-    "mistakes": 2808
+    "mistakes": 2846
   },
   "openings": [
     {
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense",
       "color": "black",
-      "games": 254,
-      "win": 128,
+      "games": 256,
+      "win": 129,
       "draw": 20,
-      "loss": 106,
+      "loss": 107,
       "score": 0.543,
-      "avg_wp_after_move10": 48.0,
+      "avg_wp_after_move10": 48.1,
       "first_blunder_move_avg": 12.9,
       "common_mistakes": [
         {
@@ -7017,13 +7087,13 @@
       "family": "Vienna Game",
       "name": "Vienna Game Falkbeer Vienna Gambit",
       "color": "white",
-      "games": 91,
-      "win": 49,
+      "games": 92,
+      "win": 50,
       "draw": 4,
       "loss": 38,
-      "score": 0.56,
-      "avg_wp_after_move10": 70.1,
-      "first_blunder_move_avg": 11.7,
+      "score": 0.565,
+      "avg_wp_after_move10": 69.8,
+      "first_blunder_move_avg": 11.8,
       "common_mistakes": [
         {
           "move_no": 5,
@@ -7066,13 +7136,13 @@
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense Advance Botvinnik Carls Defense",
       "color": "black",
-      "games": 79,
+      "games": 80,
       "win": 42,
       "draw": 5,
-      "loss": 32,
-      "score": 0.563,
-      "avg_wp_after_move10": 48.0,
-      "first_blunder_move_avg": 15.1,
+      "loss": 33,
+      "score": 0.556,
+      "avg_wp_after_move10": 48.2,
+      "first_blunder_move_avg": 15.0,
       "common_mistakes": [
         {
           "move_no": 7,
@@ -7087,13 +7157,13 @@
       "family": "Vienna Game",
       "name": "Vienna Game",
       "color": "white",
-      "games": 67,
+      "games": 68,
       "win": 31,
       "draw": 4,
-      "loss": 32,
-      "score": 0.493,
+      "loss": 33,
+      "score": 0.485,
       "avg_wp_after_move10": 57.2,
-      "first_blunder_move_avg": 12.8,
+      "first_blunder_move_avg": 12.9,
       "common_mistakes": [
         {
           "move_no": 24,
@@ -7129,32 +7199,32 @@
       "family": "Dutch Defense",
       "name": "Dutch Defense",
       "color": "black",
-      "games": 65,
+      "games": 66,
       "win": 30,
       "draw": 2,
-      "loss": 33,
-      "score": 0.477,
-      "avg_wp_after_move10": 40.9,
-      "first_blunder_move_avg": 14.5,
+      "loss": 34,
+      "score": 0.47,
+      "avg_wp_after_move10": 41.0,
+      "first_blunder_move_avg": 14.6,
       "common_mistakes": []
     },
     {
       "family": "Vienna Game",
       "name": "Vienna Game Max Lange Defense",
       "color": "white",
-      "games": 56,
-      "win": 34,
+      "games": 59,
+      "win": 36,
       "draw": 3,
-      "loss": 19,
-      "score": 0.634,
-      "avg_wp_after_move10": 53.3,
-      "first_blunder_move_avg": 8.5,
+      "loss": 20,
+      "score": 0.636,
+      "avg_wp_after_move10": 52.8,
+      "first_blunder_move_avg": 9.0,
       "common_mistakes": [
         {
           "move_no": 4,
           "san": "f4",
           "better_san": "d3",
-          "count": 8,
+          "count": 9,
           "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/2N5/PPPP1PPP/R1BQK1NR w KQkq - 4 4"
         },
         {
@@ -7191,13 +7261,13 @@
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense Exchange Variation",
       "color": "black",
-      "games": 53,
+      "games": 54,
       "win": 30,
       "draw": 2,
-      "loss": 21,
-      "score": 0.585,
-      "avg_wp_after_move10": 52.7,
-      "first_blunder_move_avg": 16.1,
+      "loss": 22,
+      "score": 0.574,
+      "avg_wp_after_move10": 51.9,
+      "first_blunder_move_avg": 15.9,
       "common_mistakes": [
         {
           "move_no": 8,
@@ -7417,6 +7487,19 @@
       "common_mistakes": []
     },
     {
+      "family": "Philidor Defense",
+      "name": "Philidor Defense",
+      "color": "white",
+      "games": 11,
+      "win": 6,
+      "draw": 2,
+      "loss": 3,
+      "score": 0.636,
+      "avg_wp_after_move10": 65.3,
+      "first_blunder_move_avg": 13.6,
+      "common_mistakes": []
+    },
+    {
       "family": "Bishops Opening",
       "name": "Bishops Opening Boi Variation",
       "color": "white",
@@ -7440,19 +7523,6 @@
       "score": 0.4,
       "avg_wp_after_move10": 58.5,
       "first_blunder_move_avg": 11.3,
-      "common_mistakes": []
-    },
-    {
-      "family": "Philidor Defense",
-      "name": "Philidor Defense",
-      "color": "white",
-      "games": 10,
-      "win": 6,
-      "draw": 1,
-      "loss": 3,
-      "score": 0.65,
-      "avg_wp_after_move10": 62.5,
-      "first_blunder_move_avg": 13.1,
       "common_mistakes": []
     },
     {
@@ -7550,6 +7620,19 @@
       ]
     },
     {
+      "family": "Alekhines Defense",
+      "name": "Alekhines Defense Scandinavian Variation",
+      "color": "white",
+      "games": 7,
+      "win": 2,
+      "draw": 1,
+      "loss": 4,
+      "score": 0.357,
+      "avg_wp_after_move10": 59.8,
+      "first_blunder_move_avg": 11.4,
+      "common_mistakes": []
+    },
+    {
       "family": "Birds Opening",
       "name": "Birds Opening Dutch Variation",
       "color": "black",
@@ -7608,19 +7691,6 @@
           "fen": "4r3/p2q1kp1/n1pP1pb1/1p5Q/3P1B2/2P2N2/P5PP/R5K1 w - - 2 23"
         }
       ]
-    },
-    {
-      "family": "Alekhines Defense",
-      "name": "Alekhines Defense Scandinavian Variation",
-      "color": "white",
-      "games": 6,
-      "win": 2,
-      "draw": 0,
-      "loss": 4,
-      "score": 0.333,
-      "avg_wp_after_move10": 62.3,
-      "first_blunder_move_avg": 10.7,
-      "common_mistakes": []
     },
     {
       "family": "Caro Kann Defense",
@@ -8217,6 +8287,19 @@
       "score": 0.0,
       "avg_wp_after_move10": 30.7,
       "first_blunder_move_avg": 15.5,
+      "common_mistakes": []
+    },
+    {
+      "family": "Caro Kann Defense",
+      "name": "Caro Kann Defense Advance Short Variation with",
+      "color": "black",
+      "games": 2,
+      "win": 0,
+      "draw": 0,
+      "loss": 2,
+      "score": 0.0,
+      "avg_wp_after_move10": 56.0,
+      "first_blunder_move_avg": 17.5,
       "common_mistakes": []
     },
     {
@@ -8848,6 +8931,19 @@
     },
     {
       "family": "Caro Kann Defense",
+      "name": "Caro Kann Defense Accelerated Panov Attack",
+      "color": "black",
+      "games": 1,
+      "win": 0,
+      "draw": 0,
+      "loss": 1,
+      "score": 0.0,
+      "avg_wp_after_move10": 79.4,
+      "first_blunder_move_avg": 7.0,
+      "common_mistakes": []
+    },
+    {
+      "family": "Caro Kann Defense",
       "name": "Caro Kann Defense Advance Botvinnik Carls",
       "color": "white",
       "games": 1,
@@ -8857,19 +8953,6 @@
       "score": 1.0,
       "avg_wp_after_move10": 31.3,
       "first_blunder_move_avg": 8.0,
-      "common_mistakes": []
-    },
-    {
-      "family": "Caro Kann Defense",
-      "name": "Caro Kann Defense Advance Short Variation with",
-      "color": "black",
-      "games": 1,
-      "win": 0,
-      "draw": 0,
-      "loss": 1,
-      "score": 0.0,
-      "avg_wp_after_move10": 79.7,
-      "first_blunder_move_avg": 13.0,
       "common_mistakes": []
     },
     {
