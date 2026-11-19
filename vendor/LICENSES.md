@@ -27,4 +27,4 @@
 
 - 來源：JJTaynos，「Chess Pieces Move (Close)」，Freesound #733927（https://freesound.org/people/JJTaynos/sounds/733927/）
 - 授權：CC0 1.0（公眾領域）。
-- 處理：從原始錄音切出單次落子（約 0.36 秒），150 Hz 高通濾波、音量正規化、結尾淡出。
+- 處理：從原始錄音切出單次落子（約 0.36 秒），音量正規化、頭尾淡入淡出；未做濾波。

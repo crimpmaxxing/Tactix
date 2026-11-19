@@ -12,13 +12,27 @@ function ensure() {
       ctx = new AC();
       loadAll(ctx);
     }
-    if (ctx.state === 'suspended') ctx.resume();
+    // iPhone 的 App 切到背景再回來時，狀態會是 'interrupted'（不是 'suspended'），一律恢復
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
     return ctx;
   } catch (e) { return null; }
 }
 
-// iPhone 要在使用者手勢裡建立／恢復 AudioContext，所以在第一次觸碰時呼叫。
-export function unlock() { ensure(); }
+// iPhone 要在使用者手勢裡建立／恢復 AudioContext；每次觸碰都會呼叫。
+// 第一次額外播一段無聲的音，讓 iOS 正式解鎖音訊輸出。
+let primed = false;
+export function unlock() {
+  const c = ensure();
+  if (!c || primed) return;
+  try {
+    const b = c.createBuffer(1, 1, 22050);
+    const src = c.createBufferSource();
+    src.buffer = b;
+    src.connect(c.destination);
+    src.start(0);
+    primed = true;
+  } catch (e) { /* 下次觸碰再試 */ }
+}
 
 function tone(c, t, { type = 'sine', f0, f1, dur, gain }) {
   const o = c.createOscillator();
@@ -79,9 +93,9 @@ function playBuf(c, key, t) {
 }
 
 // Capture 音效三選一（設定頁可試聽）
-export const CAPTURE_STYLES = { rec1: 'A・Deep', rec2: 'B・Bright', rec3: 'C・Medium' };
+export const CAPTURE_STYLES = { rec1: 'A・低沉', rec2: 'B・清脆', rec3: 'C・適中' };
 
-// 合成音（錄音載入失敗時用）。全部在 260 Hz 以上，避免 iPhone 喇叭像在震。
+// 合成音（錄音載入失敗時用）。
 function synthCapture(c, t) {
   noise(c, t, { dur: 0.035, gain: 0.5, freq: 2600, q: 1.4 });
   tone(c, t, { type: 'sine', f0: 1150, f1: 820, dur: 0.05, gain: 0.2 });

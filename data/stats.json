@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-19T12:30:35+08:00",
+ "generated": "2026-11-19T12:50:47+08:00",
  "games": 1387,
  "games_with_eval": 1387,
  "totals": {
@@ -32,23 +32,23 @@
   }
  },
  "win_how": {
-  "Resignation": 321,
-  "Checkmate": 247,
-  "Timeout": 74,
-  "Abandoned": 72
+  "認輸": 321,
+  "將死": 247,
+  "超時": 74,
+  "棄局": 72
  },
  "loss_how": {
-  "Checkmate": 448,
-  "Timeout": 119,
-  "Resignation": 19,
-  "Abandoned": 5
+  "將死": 448,
+  "超時": 119,
+  "認輸": 19,
+  "棄局": 5
  },
  "draw_how": {
-  "Stalemate": 34,
-  "Repetition": 27,
-  "Insufficient material": 10,
-  "Agreement": 7,
-  "Timeout vs insufficient": 4
+  "逼和": 34,
+  "三次重複": 27,
+  "子力不足": 10,
+  "協議和棋": 7,
+  "超時（子力不足）": 4
  },
  "big_advantage": {
   "games": 1087,

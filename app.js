@@ -6,7 +6,7 @@ import * as T from './trainer.js';
 import * as engine from './engine.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.3.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.3.2'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -14,13 +14,13 @@ const DATA_DIR = MOCK ? 'data/mock/' : 'data/';
 if (MOCK) store.setNamespace('mock');
 
 const CAT = {
-  hanging: 'Hanging piece',
-  missed_threat: 'Missed threat',
-  missed_tactic: 'Missed tactic',
-  endgame: 'Endgame technique',
-  other: 'Other',
+  hanging: '掉子',
+  missed_threat: '漏看威脅',
+  missed_tactic: '錯失戰術',
+  endgame: '殘局技術',
+  other: '其他',
 };
-const PHASE = { opening: 'Opening', middlegame: 'Middlegame', endgame: 'Endgame' };
+const PHASE = { opening: '開局', middlegame: '中局', endgame: '殘局' };
 const TAG = { time_pressure: '時間壓力', opening: '開局階段' };
 
 const ZH_OPENING = {
@@ -437,8 +437,8 @@ function openFilter() {
   closeSheet();
   const scrim = document.createElement('div');
   scrim.className = 'sheet-scrim';
-  scrim.innerHTML = `<div class="sheet" role="dialog" aria-label="Filter">
-    <div class="sheet-head"><b>Filter</b><button class="iconbtn" id="f-x" aria-label="關閉">${ICON.close}</button></div>
+  scrim.innerHTML = `<div class="sheet" role="dialog" aria-label="篩選">
+    <div class="sheet-head"><b>篩選</b><button class="iconbtn" id="f-x" aria-label="關閉">${ICON.close}</button></div>
     ${filterBlock()}
     <div class="btns"><button class="btn grow" id="f-reset">重設</button><button class="btn primary grow" id="f-done">完成</button></div>
   </div>`;
@@ -472,11 +472,11 @@ function filterBlock() {
   const ops = [...new Set(state.puzzles.map(p => p.opening).filter(Boolean))].sort();
   const f = state.filter;
   return `<div class="filters">
-    <label for="f-cat">Blunder 類型</label>
+    <label for="f-cat">漏著類型</label>
     <select id="f-cat"><option value="">全部</option>${Object.entries(CAT).map(([k, v]) => `<option value="${k}"${f.category === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
-    <label for="f-op">Opening</label>
+    <label for="f-op">開局</label>
     <select id="f-op"><option value="">全部</option>${ops.map(o => `<option value="${esc(o)}"${f.opening === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>
-    <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看 Opening 階段（前 10 手）</label>
+    <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看開局階段（前 10 手）</label>
   </div>`;
 }
 
@@ -591,7 +591,7 @@ function drawPuzzle() {
   const p = c.puzzle;
   document.getElementById('split').classList.remove('solo');
   document.getElementById('bcol').innerHTML = `
-    <div class="turn">${sideChip(p.color)}<span>Find the best move</span></div>
+    <div class="turn">${sideChip(p.color)}<span>找出最佳著</span></div>
     ${boardRowHtml()}`;
   state.evalFen = null;
   if (store.getSettings().evalbar) engine.warm();
@@ -809,17 +809,17 @@ function explorePanel(s) {
   const hist = ex.game.history();
   const noEngine = !engine.available();
   const g = ex.game;
-  const end = g.isCheckmate() ? 'Checkmate' : g.isStalemate() ? 'Stalemate' : g.isDraw() ? 'Draw' : '';
+  const end = g.isCheckmate() ? '將死' : g.isStalemate() ? '逼和' : g.isDraw() ? '和棋' : '';
   el.innerHTML = `
-    <div class="result info"><h3>Analysis</h3>
+    <div class="result info"><h3>分析</h3>
       <p>雙方皆可走子。${end ? `<b>${end}</b>` : ''}</p>
-      ${noEngine ? '<p class="small muted">Engine 未載入，無 Eval。</p>' : ''}</div>
+      ${noEngine ? '<p class="small muted">引擎未載入，無評估。</p>' : ''}</div>
     <div class="line small movelist">${hist.length ? esc(fmtMoves(ex.startFen, hist)) : '—'}</div>
     <div class="actions">
       <div class="btns">
         <button class="btn icon" id="x-reset" aria-label="回到起點"${hist.length ? '' : ' disabled'}>${ICON.first}</button>
         <button class="btn icon" id="x-undo" aria-label="上一步"${hist.length ? '' : ' disabled'}>${ICON.prev}</button>
-        <button class="btn grow" id="x-best"${noEngine || end ? ' disabled' : ''}>${ex.wantBest ? 'Engine 計算中…' : 'Best move'}</button>
+        <button class="btn grow" id="x-best"${noEngine || end ? ' disabled' : ''}>${ex.wantBest ? '計算中…' : '最佳著'}</button>
       </div>
       <div class="btns"><button class="btn primary grow" id="x-end">結束</button></div>
     </div>`;
@@ -905,7 +905,7 @@ function wrongMove(s, mv) {
   let why = s.legacy || offBook ? '' : T.whyText(q, mv.san);
   if (!why && s.kind === 'drill') why = '這不是這套開局要練的走法。';
   s.msg = offBook
-    ? { kind: 'bad', title: `${mv.san}：非 Main line`, text: '可下，但不在本套 Repertoire。' }
+    ? { kind: 'bad', title: `${mv.san}：非主線`, text: '可下，但不在本套開局。' }
     : { kind: 'bad', title: `${mv.san}?`, text: why };
   const reply = s.legacy || offBook ? null : T.pickReply(q, mv.san, s.game.fen());
   updateBoard(s, { animate: true });
@@ -931,7 +931,7 @@ function rightMove(s, mv, kind) {
   s.hl = [];
   s.msg = kind === 'best'
     ? { kind: 'ok', title: '正確', text: '' }
-    : { kind: 'ok', title: '可行', text: `Best move：${s.q.best}` };
+    : { kind: 'ok', title: '可行', text: `最佳著：${s.q.best}` };
   s.afterRight(s, mv, kind);
 }
 
@@ -940,7 +940,7 @@ function giveUp(s) {
   markFailed(s);
   s.revealed = true;
   s.hl = hintSquares(s);
-  s.msg = { kind: 'info', title: 'Solution', text: `${s.q.best}，請走一次。` };
+  s.msg = { kind: 'info', title: '解答', text: `${s.q.best}，請走一次。` };
   updateBoard(s);
   updatePanel(s, true);
 }
@@ -964,9 +964,9 @@ function hintHtml(s) {
 function recText(rec) {
   if (!rec) return '';
   let t;
-  if (rec.box > rec.from) t = `Box ${rec.box}・${rec.days} 天後複習`;
-  else if (rec.box === rec.from && rec.box === 5) t = `Box 5・${rec.days} 天後複習`;
-  else t = 'Box 1・稍後再出';
+  if (rec.box > rec.from) t = `第 ${rec.box} 盒・${rec.days} 天後複習`;
+  else if (rec.box === rec.from && rec.box === 5) t = `第 5 盒・${rec.days} 天後複習`;
+  else t = '第 1 盒・稍後再出';
   if (!rec.saved) t += '（進度未儲存）';
   return t;
 }
@@ -988,7 +988,7 @@ function puzzleRight(c, mv, kind) {
   let t = 650;
   if (kind === 'alt') {
     // 走的不是最佳著：先讓使用者看清楚自己的走法，再把棋子滑回去、改走最佳著，後面的局面才對得上
-    c.msg = { kind: 'ok', title: '可行', text: `Best move：${q.best}，以此續行。` };
+    c.msg = { kind: 'ok', title: '可行', text: `最佳著：${q.best}，以此續行。` };
     updatePanel(c);
     t = 1400;
     later(c, t, () => {
@@ -1015,7 +1015,7 @@ function startStep(c, i) {
   c.busy = false;
   c.status = '';
   c.hl = [];
-  c.msg = i === 0 ? null : { kind: 'info', title: `Step ${i + 1}`, text: '' };
+  c.msg = i === 0 ? null : { kind: 'info', title: `第 ${i + 1} 步`, text: '' };
   updateBoard(c);
   updatePanel(c, true);
 }
@@ -1042,7 +1042,7 @@ function puzzlePanel(c) {
       ${total > 1 ? `<div class="stepbar">第 ${c.idx + 1} / ${total} 步</div>` : ''}
       ${msgHtml(c.msg)}
       ${hintHtml(c)}
-      <div class="btns actions"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>Solution</button></div>`;
+      <div class="btns actions"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>解答</button></div>`;
     document.getElementById('giveup').addEventListener('click', () => giveUp(c));
     return;
   }
@@ -1052,32 +1052,32 @@ function puzzlePanel(c) {
   const hasLine = c.lineFens && c.lineFens.length > 1;
   const idx = c.lineIdx;
   const link = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">chess.com 原局</a>` : '';
-  const title = ok ? 'Solved' : 'Completed';
+  const title = ok ? '正確' : '完成';
   el.innerHTML = `
     <div class="result ${ok ? 'ok' : 'info'}">
       <h3>${title}</h3>
       ${c.msg && c.msg.title === '可行' ? `<div><b>可行</b>　${esc(c.msg.text)}</div>` : ''}
-      ${!ok ? '<div>有錯誤或使用 Solution，將再次出題。</div>' : ''}
+      ${!ok ? '<div>有錯誤或看過解答，之後會再出題。</div>' : ''}
       ${p.played_san ? `<div>實戰：<b>${esc(moveLabel(p, p.played_san))}</b></div>` : ''}
-      <div>Best move：<b>${esc(p.best_san)}</b>${p.accept_san.length > 1 ? `（亦可：${esc(p.accept_san.filter(x => norm(x) !== norm(p.best_san)).join('、'))}）` : ''}</div>
+      <div>最佳著：<b>${esc(p.best_san)}</b>${p.accept_san.length > 1 ? `（亦可：${esc(p.accept_san.filter(x => norm(x) !== norm(p.best_san)).join('、'))}）` : ''}</div>
       ${p.explanation ? `<p>${esc(p.explanation)}</p>` : ''}
       <div>${meta}</div>
-      <div class="small muted" style="margin-top:6px">${esc(recText(c.rec))}${c.retried ? '（Retry 不計分）' : ''}</div>
+      <div class="small muted" style="margin-top:6px">${esc(recText(c.rec))}${c.retried ? '（重試不計分）' : ''}</div>
       ${link}
     </div>
-    ${hasLine ? `<div class="card"><b>Best line</b>
+    ${hasLine ? `<div class="card"><b>最佳變化</b>
       <div class="line">${fmtLine(p, idx)}</div></div>` : ''}
     <div class="actions">
       ${hasLine ? `<div class="btns">
         <button class="btn icon" id="l-first" aria-label="回到題目局面">${ICON.first}</button>
         <button class="btn icon" id="l-prev" aria-label="上一步">${ICON.prev}</button>
         <button class="btn icon" id="l-next" aria-label="下一步">${ICON.next}</button>
-        <button class="btn grow" id="l-play">${ICON.play}Play</button>
+        <button class="btn grow" id="l-play">${ICON.play}播放</button>
       </div>` : ''}
       <div class="btns">
-        <button class="btn grow" id="explore">Analysis</button>
-        ${!ok ? '<button class="btn grow" id="retry">Retry</button>' : ''}
-        <button class="btn primary grow" id="next">Next</button>
+        <button class="btn grow" id="explore">分析</button>
+        ${!ok ? '<button class="btn grow" id="retry">重試</button>' : ''}
+        <button class="btn primary grow" id="next">下一題</button>
       </div>
     </div>`;
   document.getElementById('explore').addEventListener('click', () => startExplore(c));
@@ -1295,7 +1295,7 @@ function drillRight(s, mv, kind) {
     s.stats.clean++;
     s.rec = store.record(s.nodeId, true);
   }
-  const text = kind === 'best' ? q.idea : `Main line：${q.best}${q.idea ? '。' + q.idea : ''}`;
+  const text = kind === 'best' ? q.idea : `主線：${q.best}${q.idea ? '。' + q.idea : ''}`;
   s.msg = { kind: 'ok', title: kind === 'best' ? '正確' : '可行', text };
   s.q = null;
   updateBoard(s, { animate: true });
@@ -1334,12 +1334,12 @@ function drillPanel(s) {
   if (s.done) {
     const st = s.stats;
     el.innerHTML = `
-      <div class="result ok"><h3>Line complete</h3>
+      <div class="result ok"><h3>本線完成</h3>
         <p>你走了 ${st.me} 步，一次就對的有 ${st.clean} 步。</p></div>
       ${msgHtml(s.msg)}
       ${list}
       <div class="actions">
-        <div class="btns"><button class="btn grow" id="explore">Analysis</button><a class="btn grow" href="#/openings/drill">換 Repertoire</a></div>
+        <div class="btns"><button class="btn grow" id="explore">分析</button><a class="btn grow" href="#/openings/drill">換開局</a></div>
         <div class="btns"><button class="btn primary grow" id="again">重練</button></div>
       </div>`;
     document.getElementById('again').addEventListener('click', () => pageDrill(s.rep.id));
@@ -1351,7 +1351,7 @@ function drillPanel(s) {
     ${hintHtml(s)}
     ${list}
     <div class="btns actions">
-      <button class="btn grow" id="giveup"${s.busy || s.revealed || !s.q ? ' disabled' : ''}>Solution</button>
+      <button class="btn grow" id="giveup"${s.busy || s.revealed || !s.q ? ' disabled' : ''}>解答</button>
       <button class="btn grow" id="restart">重來</button>
     </div>`;
   document.getElementById('giveup').addEventListener('click', () => giveUp(s));
@@ -1393,9 +1393,9 @@ function pageSettings() {
     </div>
     <div class="card"><h3 style="margin-top:0">棋盤與音效</h3>
       <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 音效</label>
-      <label class="small muted" for="cap">Capture 音效</label>
+      <label class="small muted" for="cap">吃子音效</label>
       <div class="btns" style="margin-top:4px"><select id="cap" style="flex:1">${Object.entries(audio.CAPTURE_STYLES).map(([k, v]) => `<option value="${k}"${set.capture === k ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="btn" id="cap-play">試聽</button></div>
-      <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> Eval bar</label>
+      <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> 評估條</label>
       <label class="small muted" for="theme">棋盤配色</label>
       <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
       <div class="board-slot" id="theme-prev" style="margin-top:10px"></div>
