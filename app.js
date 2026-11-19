@@ -4,7 +4,7 @@ import { Board, renderBoard } from './board.js';
 import * as audio from './audio.js';
 import * as T from './trainer.js';
 
-export const APP_VERSION = '2.0.2'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.0.3'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();

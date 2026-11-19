@@ -161,7 +161,7 @@ export class Board {
       if (last && (name === last.from || name === last.to)) cls += ' last';
       if (name === this.selected) cls += ' sel';
       if (tmap.has(name)) cls += ' target' + (tmap.get(name).cap ? ' cap' : '');
-      if (name === this.cfg.check) cls += ' check';
+      if (name === this.cfg.check) cls += ' incheck';
       if (this.cfg.hl && this.cfg.hl.includes(name)) cls += ' hint';
       if (this.d && this.d.dragging && name === this.d.from) cls += ' src';
       if (name === this.over) cls += ' over';
