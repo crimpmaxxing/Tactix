@@ -24,7 +24,8 @@ function tone(c, t, { type = 'sine', f0, f1, dur, gain }) {
   o.type = type;
   o.frequency.setValueAtTime(f0, t);
   o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-  g.gain.setValueAtTime(gain, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g).connect(c.destination);
   o.start(t);
@@ -43,23 +44,44 @@ function noise(c, t, { dur, gain, freq, q = 1, kind = 'bandpass' }) {
   f.frequency.value = freq;
   f.Q.value = q;
   const g = c.createGain();
-  g.gain.setValueAtTime(gain, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.002);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   src.connect(f).connect(g).connect(c.destination);
   src.start(t);
   src.stop(t + dur + 0.02);
 }
 
-// kind: 'move' | 'capture'
-export function play(kind) {
-  if (!store.getSettings().sound) return;
+// 吃子音效三選一（設定頁可試聽）。全部在 260 Hz 以上，避免 iPhone 喇叭像在震。
+export const CAPTURE_STYLES = { wood: '木頭（兩下敲擊）', crisp: '清脆', soft: '柔和' };
+const CAPTURE = {
+  // 棋子落下、再碰到被吃的子：先硬後鈍的兩下
+  wood(c, t) {
+    noise(c, t, { dur: 0.035, gain: 0.5, freq: 2600, q: 1.4 });
+    tone(c, t, { type: 'sine', f0: 1150, f1: 820, dur: 0.05, gain: 0.2 });
+    noise(c, t + 0.045, { dur: 0.06, gain: 0.45, freq: 1500, q: 1.1 });
+    tone(c, t + 0.045, { type: 'triangle', f0: 560, f1: 380, dur: 0.08, gain: 0.22 });
+  },
+  crisp(c, t) {
+    noise(c, t, { dur: 0.025, gain: 0.55, freq: 3800, q: 2 });
+    tone(c, t, { type: 'sine', f0: 1900, f1: 1300, dur: 0.045, gain: 0.16 });
+    tone(c, t + 0.01, { type: 'sine', f0: 950, f1: 700, dur: 0.07, gain: 0.15 });
+  },
+  soft(c, t) {
+    noise(c, t, { dur: 0.08, gain: 0.32, freq: 1100, q: 0.7, kind: 'lowpass' });
+    tone(c, t, { type: 'sine', f0: 480, f1: 300, dur: 0.11, gain: 0.24 });
+  },
+};
+
+// kind: 'move' | 'capture'；style 只給試聽用
+export function play(kind, style) {
+  if (!store.getSettings().sound && !style) return;
   const c = ensure();
   if (!c) return;
   try {
     const t = c.currentTime + 0.005;
     if (kind === 'capture') {
-      noise(c, t, { dur: 0.10, gain: 0.7, freq: 1100, q: 0.8 });
-      tone(c, t, { type: 'triangle', f0: 520, f1: 280, dur: 0.10, gain: 0.3 });   // 不用 200 Hz 以下，iPhone 喇叭會像在震
+      (CAPTURE[style || store.getSettings().capture] || CAPTURE.wood)(c, t);
     } else {
       noise(c, t, { dur: 0.04, gain: 0.35, freq: 1800, kind: 'lowpass' });
       tone(c, t, { type: 'triangle', f0: 700, f1: 380, dur: 0.06, gain: 0.3 });

@@ -117,6 +117,7 @@ export function getSettings() {
     board: o && o.board === 'brown' ? 'brown' : 'green',
     ui: o && (o.ui === 'light' || o.ui === 'dark') ? o.ui : 'auto',
     evalbar: o && typeof o.evalbar === 'boolean' ? o.evalbar : true,
+    capture: o && ['wood', 'crisp', 'soft'].includes(o.capture) ? o.capture : 'wood',
   };
   return smem;
 }

@@ -4,8 +4,9 @@ import { Board, renderBoard } from './board.js';
 import * as audio from './audio.js';
 import * as T from './trainer.js';
 import * as engine from './engine.js';
+import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.1.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.2.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -164,6 +165,10 @@ async function loadData() {
     state.reportError = !state.report;
   } catch (e) { state.report = null; state.reportError = true; }
   try {
+    const st = await getJson('data/stats.json');
+    state.stats = st && typeof st === 'object' && st.totals ? st : null;
+  } catch (e) { state.stats = null; }
+  try {
     const arr = await getJson(DATA_DIR + 'puzzles.json');
     const ok = [];
     let bad = 0;
@@ -234,6 +239,7 @@ function route() {
   stopTimer();
   closeSheet();
   engine.stop();
+  cleanupOverview();
   state.evalFen = null;
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'overview';
@@ -243,6 +249,7 @@ function route() {
   if (!isDrill || parts[2] === undefined) state.drill = null;
   const boardPage = page === 'practice' || (isDrill && parts[2] !== undefined);
   $view.classList.toggle('wide', boardPage);
+  $view.classList.toggle('ovpage', page === 'overview' || page === '');
   document.body.classList.toggle('fit', boardPage);
   updateFitH();
   try {
@@ -266,70 +273,11 @@ function noData(what) {
   return `<div class="card empty"><p>讀不到${esc(what)}。</p><p class="muted small">請先在電腦執行 analyze.py，或連上網路後重新開啟。</p></div>`;
 }
 
-function sparkline(hist) {
-  const pts = (hist || []).filter(h => h && Number.isFinite(h.rating) && h.date);
-  if (pts.length < 2) return '';
-  const W = 320, H = 90, P = 6;
-  const ts = pts.map(p => new Date(p.date).getTime());
-  const t0 = Math.min(...ts), t1 = Math.max(...ts);
-  const rs = pts.map(p => p.rating);
-  const r0 = Math.min(...rs) - 10, r1 = Math.max(...rs) + 10;
-  const X = t => P + (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0)) * (W - 2 * P);
-  const Y = r => H - P - (r - r0) / (r1 - r0) * (H - 2 * P);
-  const line = (tc, color) => {
-    const a = pts.filter(p => p.time_class === tc);
-    if (a.length < 2) return '';
-    const d = a.map(p => `${X(new Date(p.date).getTime()).toFixed(1)},${Y(p.rating).toFixed(1)}`).join(' ');
-    return `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${d}"/>`;
-  };
-  const last = tc => { const a = pts.filter(p => p.time_class === tc); return a.length ? a[a.length - 1].rating : null; };
-  const lb = last('blitz'), lr = last('rapid');
-  return `<div class="card"><h3>等級分變化</h3>
-    <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="等級分折線圖">
-      ${line('blitz', 'var(--accent)')}${line('rapid', 'var(--warn)')}</svg>
-    <div class="small muted"><span style="color:var(--accent)">━</span> 快棋 ${lb ?? '—'}　<span style="color:var(--warn)">━</span> 中速棋 ${lr ?? '—'}</div></div>`;
-}
-
-function barRows(obj, labels, total) {
-  const vals = Object.keys(labels).map(k => [k, Number(obj?.[k]) || 0]);
-  const max = Math.max(1, ...vals.map(v => v[1]));
-  return vals.map(([k, v]) => `<div class="bar-row"><span>${esc(labels[k])}</span>
-    <div class="bar"><i style="width:${(v / max * 100).toFixed(1)}%"></i></div><b>${v}</b></div>`).join('');
-}
-
 function pageOverview() {
   setTitle('Tactix');
   const r = state.report;
-  if (!r) { $view.innerHTML = noData('分析報告'); return; }
-  const t = r.totals || {};
-  const g = Number(t.games) || 0;
-  const w = Number(t.win) || 0, d = Number(t.draw) || 0, l = Number(t.loss) || 0;
-  const b = r.blunders || {};
-  const cats = b.by_category || {};
-  const totalB = Object.values(cats).reduce((a, x) => a + (Number(x) || 0), 0);
-  const tp = Number(b.with_time_pressure) || 0;
-  const due = dueCount();
-  $view.innerHTML = `
-    <div class="card">
-      <div class="grid3">
-        <div class="stat"><b>${g}</b><span>總局數</span></div>
-        <div class="stat"><b>${Number(b.per_game ?? 0).toFixed(2)}</b><span>每局平均漏著</span></div>
-        <div class="stat"><b>${totalB ? pct(tp / totalB * 100) : '—'}</b><span>時間壓力占比</span></div>
-      </div>
-      <div class="wdl" role="img" aria-label="勝和負比例">
-        <i class="w" style="width:${g ? w / g * 100 : 0}%"></i><i class="d" style="width:${g ? d / g * 100 : 0}%"></i><i class="l" style="width:${g ? l / g * 100 : 0}%"></i>
-      </div>
-      <div class="small muted">勝 ${w}　和 ${d}　負 ${l}　｜　快棋 ${Number(t.blitz) || 0} 局，中速棋 ${Number(t.rapid) || 0} 局</div>
-    </div>
-    <div class="card">
-      <b>今天要練 ${due} 題</b>
-      <div class="btns"><a class="btn primary" href="#/practice">開始練習</a></div>
-    </div>
-    <div class="card"><h3>漏著原因（共 ${totalB} 次）</h3>${barRows(cats, CAT)}</div>
-    <div class="card"><h3>漏著發生階段</h3>${barRows(b.by_phase, PHASE)}
-      <p class="small muted">有時間壓力的漏著：${tp} 次（${totalB ? pct(tp / totalB * 100) : '—'}）。</p></div>
-    ${sparkline(r.rating_history)}
-    <p class="small muted">資料產生時間：${esc(fmtDate(r.generated))}</p>`;
+  if (!r && !state.stats) { $view.innerHTML = noData('分析報告'); return; }
+  renderOverview($view, { report: r, stats: state.stats, due: dueCount(), CAT, PHASE, fmtDate });
 }
 
 /* ---------- 開局 ---------- */
@@ -1446,6 +1394,8 @@ function pageSettings() {
     </div>
     <div class="card"><h3 style="margin-top:0">棋盤與音效</h3>
       <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 走子音效</label>
+      <label class="small muted" for="cap">吃子音效（選了就會試聽）</label>
+      <div class="btns" style="margin-top:4px"><select id="cap" style="flex:1">${Object.entries(audio.CAPTURE_STYLES).map(([k, v]) => `<option value="${k}"${set.capture === k ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="btn" id="cap-play">試聽</button></div>
       <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> 顯示評估條（棋盤左側，白色越多白方越好）</label>
       <label class="small muted" for="theme">棋盤配色</label>
       <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
@@ -1467,6 +1417,8 @@ function pageSettings() {
     audio.unlock();
     if (ev.target.checked) audio.play('move');
   });
+  document.getElementById('cap').addEventListener('change', ev => { store.setSetting('capture', ev.target.value); audio.unlock(); audio.play('capture', ev.target.value); });
+  document.getElementById('cap-play').addEventListener('click', () => { audio.unlock(); audio.play('capture', document.getElementById('cap').value); });
   document.getElementById('evb').addEventListener('change', ev => store.setSetting('evalbar', ev.target.checked));
   document.getElementById('ui').addEventListener('change', ev => {
     const v = ev.target.value;
