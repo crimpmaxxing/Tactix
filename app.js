@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.6.0'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.6.1'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -1413,7 +1413,8 @@ const enc = encodeURIComponent;
 
 function learnLevelOf(repId) {
   const n = Number(store.getSettings().learnLevel?.[repId]);
-  return Number.isFinite(n) && n >= 1 && n <= 4 ? Math.floor(n) : 1;
+  // 預設第 3 級（2026-11-19 使用者要「同一變例的分支一起學」；第 1 級每章常只有主線一條）
+  return Number.isFinite(n) && n >= 1 && n <= 4 ? Math.floor(n) : 3;
 }
 
 function setLearnLevel(repId, n) {
@@ -1472,6 +1473,15 @@ function bumpDailyNew() {
   try { localStorage.setItem(DAILY_KEY, JSON.stringify({ date: todayStr(), lines: dailyNew() + 1 })); } catch (e) { /* 無痕模式等情況略過 */ }
 }
 
+// 目前專注的開局與章節：推薦會一直接著學，學完才換（使用者要同一變例的分支一起學）
+const FOCUS_KEY = 'chesscoach.v1.focus';
+function getFocus() {
+  try { return JSON.parse(localStorage.getItem(FOCUS_KEY) || 'null') || {}; } catch (e) { return {}; }
+}
+function setFocus(rep, ch) {
+  try { localStorage.setItem(FOCUS_KEY, JSON.stringify({ rep, ch })); } catch (e) { /* 略過 */ }
+}
+
 function learnRecommend(now = Date.now()) {
   if (!state.openings || !state.learnData) return null;
   const ctxs = state.openings.map(r => learnCtx(r.id)).filter(Boolean);
@@ -1481,17 +1491,22 @@ function learnRecommend(now = Date.now()) {
     if (due && (!rev || due > rev.n)) rev = { kind: 'review', c, n: due };
   }
   if (rev) return rev;
+  // 新線：先留在專注的開局與章節；章節學完依章節順序往下；整套學完才換下一套（依實戰比例）
+  const left = (c, ch) => L.newLines(c.rep, ch, c.thr, Infinity, now).length;
+  const focus = getFocus();
+  const order = ctxs.slice().sort((a, b) => (Number(b.ld.weight) || 0) - (Number(a.ld.weight) || 0));
+  const fi = order.findIndex(c => c.rep.id === focus.rep);
+  if (fi > 0) order.unshift(order.splice(fi, 1)[0]);
   let cand = null;
-  for (const c of ctxs) {
-    const w = Number(c.ld.weight) > 0 ? Number(c.ld.weight) : 0.05;
-    for (const ch of c.ld.chapters) {
-      let score = 0;
-      for (const it of L.chapterMoves(c.rep, ch, c.thr)) {
-        if (L.moveStatus(it.id, now) === 'new') score += Number(it.line.moves[it.idx].reach) || 0;
-      }
-      score *= w;
-      if (score > 0 && (!cand || score > cand.score)) cand = { kind: 'new', c, ch, score };
+  for (const c of order) {
+    const chs = c.ld.chapters;
+    const start = c.rep.id === focus.rep ? Math.max(0, chs.findIndex(ch => ch.id === focus.ch)) : 0;
+    for (let k = 0; k < chs.length && !cand; k++) {
+      const ch = chs[(start + k) % chs.length];
+      const n = left(c, ch);
+      if (n) cand = { kind: 'new', c, ch, chLeft: n };
     }
+    if (cand) break;
   }
   if (!cand) {
     const c = ctxs.slice().sort((a, b) => (Number(b.ld.weight) || 0) - (Number(a.ld.weight) || 0))[0];
@@ -1521,9 +1536,10 @@ function recCardHtml(r) {
     btn = '開始複習';
   } else if (r.kind === 'new') {
     title = '下一步：學新線';
-    text = `${r.c.rep.name}・${r.ch.title}　${r.lines} 條`;
+    text = `${r.c.rep.name}・${r.ch.title}`;
     btn = '開始學習';
-    extra = `<div class="small muted">你的對局 ${Math.round((Number(r.c.ld.weight) || 0) * 100)}% 是這套開局；這章佔實戰 ${Math.round(r.ch.share * 100)}%。今天已學 ${dailyNew()} 條。</div>`;
+    const ci = r.c.ld.chapters.indexOf(r.ch) + 1;
+    extra = `<div class="small muted">第 ${ci}／${r.c.ld.chapters.length} 章，這章還有 ${r.chLeft} 條${r.chLeft > r.lines ? `（這批 ${r.lines} 條）` : ''}。這章的分支學完再換下一章。今天已學 ${dailyNew()} 條。</div>`;
   } else if (r.kind === 'rest') {
     title = `今天已學 ${r.today} 條新線`;
     text = '已達每日上限，建議用實戰模擬鞏固，新線明天再學。';
@@ -1534,8 +1550,9 @@ function recCardHtml(r) {
     text = '等複習到期；九成練熟後會自動開放下一級。';
     btn = '實戰模擬';
   }
+  const pick = r.kind === 'new' ? `<a class="btn grow" href="#/learn/${enc(r.c.rep.id)}">改選章節</a>` : '';
   return `<div class="card rec"><div class="rec-t">${esc(title)}</div><div>${esc(text)}</div>${r.kind === 'rest' ? '' : extra}
-    <div class="btns"><a class="btn primary grow" href="${esc(recHref(r))}" data-rec>${esc(btn)}</a>${r.kind === 'rest' ? extra : ''}</div></div>`;
+    <div class="btns"><a class="btn primary grow" href="${esc(recHref(r))}" data-rec>${esc(btn)}</a>${r.kind === 'rest' ? extra : pick}</div></div>`;
 }
 
 // 同一個網址時 hashchange 不會觸發，手動重跑路由
@@ -1672,7 +1689,7 @@ function learnSession(repId, chId, sub, arg) {
   if (store.getSettings().evalbar) engine.warm();
   updateBoard(s);
   updatePanel(s);
-  if (sub === 'new') learnStartNew(s);
+  if (sub === 'new') { setFocus(c.rep.id, chap.id); learnStartNew(s); }
   else if (sub === 'review') {
     const items = chap ? L.chapterMoves(c.rep, chap, c.thr) : L.repMoves(c.rep, c.ld, c.thr);
     learnStartReview(s, L.dueItems(items));
