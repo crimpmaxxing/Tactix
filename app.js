@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.6.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.6.2'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -1815,11 +1815,10 @@ function learnQuizStart(s) {
   later(s, 450, () => learnStep(s));
 }
 
-// 已熟、而且不是這批新學的著法：自動快轉
+// 我方著法一律自己下（2026-11-19 使用者同意：學新線要從頭下完整條線，記得比較連貫）；
+// 只有資料裡沒有節點的著法自動走。
 function learnSkip(s, m) {
-  if (!m.node) return true;
-  if (s.mode !== 'new') return false;
-  return L.moveStatus(m.id) === 'known' && (!s.newSet.has(m.id) || s.seen.has(m.id));
+  return !m.node;
 }
 
 function learnStep(s) {
@@ -1857,6 +1856,8 @@ function learnAsk(s) {
 // 每個著法在一輪裡只記一次（第一次對或錯）；複習的補考不記
 function learnRecord(s, m, correct) {
   if (!m.id || s.recorded.has(m.id)) return;
+  // 學新線時只替這批新學的步排複習；以前學過的步重下一次，不動它的排程
+  if (s.mode === 'new' && !s.newSet.has(m.id)) return;
   if (s.cur && s.cur.retry) return;
   s.recorded.add(m.id);
   s.rec = store.record(m.id, correct);
