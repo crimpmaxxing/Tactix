@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-19T12:12:33+08:00",
+ "generated": "2026-11-19T12:30:35+08:00",
  "games": 1387,
  "games_with_eval": 1387,
  "totals": {
@@ -32,23 +32,23 @@
   }
  },
  "win_how": {
-  "認輸": 321,
-  "將死": 247,
-  "超時": 74,
-  "棄局": 72
+  "Resignation": 321,
+  "Checkmate": 247,
+  "Timeout": 74,
+  "Abandoned": 72
  },
  "loss_how": {
-  "將死": 448,
-  "超時": 119,
-  "認輸": 19,
-  "棄局": 5
+  "Checkmate": 448,
+  "Timeout": 119,
+  "Resignation": 19,
+  "Abandoned": 5
  },
  "draw_how": {
-  "逼和": 34,
-  "三次重複": 27,
-  "子力不足": 10,
-  "協議和棋": 7,
-  "超時但子力不足": 4
+  "Stalemate": 34,
+  "Repetition": 27,
+  "Insufficient material": 10,
+  "Agreement": 7,
+  "Timeout vs insufficient": 4
  },
  "big_advantage": {
   "games": 1087,
@@ -175,23 +175,23 @@
   }
  },
  "by_rating_diff": {
-  "低 200+": {
+  "≤ −200": {
    "games": 8,
    "score": 0.938
   },
-  "低 50–200": {
+  "−200~−50": {
    "games": 32,
    "score": 0.891
   },
-  "相近 ±50": {
+  "±50": {
    "games": 1309,
    "score": 0.544
   },
-  "高 50–200": {
+  "+50~+200": {
    "games": 36,
    "score": 0.194
   },
-  "高 200+": {
+  "≥ +200": {
    "games": 2,
    "score": 0.0
   }

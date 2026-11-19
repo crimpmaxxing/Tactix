@@ -6,7 +6,7 @@ import * as T from './trainer.js';
 import * as engine from './engine.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.2.0'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.3.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -14,13 +14,13 @@ const DATA_DIR = MOCK ? 'data/mock/' : 'data/';
 if (MOCK) store.setNamespace('mock');
 
 const CAT = {
-  hanging: '掉子',
-  missed_threat: '沒看到對方威脅',
-  missed_tactic: '錯過自己的機會',
-  endgame: '殘局技術',
-  other: '其他',
+  hanging: 'Hanging piece',
+  missed_threat: 'Missed threat',
+  missed_tactic: 'Missed tactic',
+  endgame: 'Endgame technique',
+  other: 'Other',
 };
-const PHASE = { opening: '開局', middlegame: '中局', endgame: '殘局' };
+const PHASE = { opening: 'Opening', middlegame: 'Middlegame', endgame: 'Endgame' };
 const TAG = { time_pressure: '時間壓力', opening: '開局階段' };
 
 const ZH_OPENING = {
@@ -437,10 +437,10 @@ function openFilter() {
   closeSheet();
   const scrim = document.createElement('div');
   scrim.className = 'sheet-scrim';
-  scrim.innerHTML = `<div class="sheet" role="dialog" aria-label="篩選題目">
-    <div class="sheet-head"><b>篩選題目</b><button class="iconbtn" id="f-x" aria-label="關閉">${ICON.close}</button></div>
+  scrim.innerHTML = `<div class="sheet" role="dialog" aria-label="Filter">
+    <div class="sheet-head"><b>Filter</b><button class="iconbtn" id="f-x" aria-label="關閉">${ICON.close}</button></div>
     ${filterBlock()}
-    <div class="btns"><button class="btn grow" id="f-reset">清除篩選</button><button class="btn primary grow" id="f-done">完成</button></div>
+    <div class="btns"><button class="btn grow" id="f-reset">重設</button><button class="btn primary grow" id="f-done">完成</button></div>
   </div>`;
   document.body.appendChild(scrim);
   const cat = scrim.querySelector('#f-cat'), op = scrim.querySelector('#f-op'), oo = scrim.querySelector('#f-open');
@@ -472,11 +472,11 @@ function filterBlock() {
   const ops = [...new Set(state.puzzles.map(p => p.opening).filter(Boolean))].sort();
   const f = state.filter;
   return `<div class="filters">
-    <label for="f-cat">漏著類別</label>
+    <label for="f-cat">Blunder 類型</label>
     <select id="f-cat"><option value="">全部</option>${Object.entries(CAT).map(([k, v]) => `<option value="${k}"${f.category === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
-    <label for="f-op">開局</label>
+    <label for="f-op">Opening</label>
     <select id="f-op"><option value="">全部</option>${ops.map(o => `<option value="${esc(o)}"${f.opening === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>
-    <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看開局階段（前 10 手）</label>
+    <label class="check"><input type="checkbox" id="f-open"${f.openingOnly ? ' checked' : ''}> 只看 Opening 階段（前 10 手）</label>
   </div>`;
 }
 
@@ -513,9 +513,9 @@ function nextPuzzle() {
     split.classList.add('solo');
     const total = filtered().length;
     host.innerHTML = `<div class="card empty">
-      <h3>${total ? '今天到期的題目都練完了' : '這個篩選條件下沒有題目'}</h3>
+      <h3>${total ? '今日題目已完成' : '無符合條件的題目'}</h3>
       <p class="muted">${total ? esc(nextDueText()) : '請放寬篩選條件。'}</p>
-      ${total ? '<div class="btns" style="justify-content:center"><button class="btn primary" id="more">再多練幾題</button></div>' : ''}</div>`;
+      ${total ? '<div class="btns" style="justify-content:center"><button class="btn primary" id="more">加練</button></div>' : ''}</div>`;
     const more = document.getElementById('more');
     if (more) more.addEventListener('click', () => { state.extra = true; nextPuzzle(); });
     return;
@@ -591,7 +591,7 @@ function drawPuzzle() {
   const p = c.puzzle;
   document.getElementById('split').classList.remove('solo');
   document.getElementById('bcol').innerHTML = `
-    <div class="turn">${sideChip(p.color)}<span>找出更好的一步</span></div>
+    <div class="turn">${sideChip(p.color)}<span>Find the best move</span></div>
     ${boardRowHtml()}`;
   state.evalFen = null;
   if (store.getSettings().evalbar) engine.warm();
@@ -809,19 +809,19 @@ function explorePanel(s) {
   const hist = ex.game.history();
   const noEngine = !engine.available();
   const g = ex.game;
-  const end = g.isCheckmate() ? '將死。' : g.isDraw() ? '和棋。' : '';
+  const end = g.isCheckmate() ? 'Checkmate' : g.isStalemate() ? 'Stalemate' : g.isDraw() ? 'Draw' : '';
   el.innerHTML = `
-    <div class="result info"><h3>自己推演</h3>
-      <p>黑白兩邊都由你走${noEngine ? '。' : '，評估條會跟著更新。'}${end ? `<b>${end}</b>` : ''}</p>
-      ${noEngine ? '<p class="small muted">還沒有放引擎檔，只能移動棋子、沒有評估。</p>' : ''}</div>
-    <div class="line small movelist">${hist.length ? esc(fmtMoves(ex.startFen, hist)) : '從這個局面開始，隨意走走看。'}</div>
+    <div class="result info"><h3>Analysis</h3>
+      <p>雙方皆可走子。${end ? `<b>${end}</b>` : ''}</p>
+      ${noEngine ? '<p class="small muted">Engine 未載入，無 Eval。</p>' : ''}</div>
+    <div class="line small movelist">${hist.length ? esc(fmtMoves(ex.startFen, hist)) : '—'}</div>
     <div class="actions">
       <div class="btns">
-        <button class="btn icon" id="x-reset" aria-label="回到推演起點"${hist.length ? '' : ' disabled'}>${ICON.first}</button>
+        <button class="btn icon" id="x-reset" aria-label="回到起點"${hist.length ? '' : ' disabled'}>${ICON.first}</button>
         <button class="btn icon" id="x-undo" aria-label="上一步"${hist.length ? '' : ' disabled'}>${ICON.prev}</button>
-        <button class="btn grow" id="x-best"${noEngine || end ? ' disabled' : ''}>${ex.wantBest ? '引擎思考中…' : '最佳著'}</button>
+        <button class="btn grow" id="x-best"${noEngine || end ? ' disabled' : ''}>${ex.wantBest ? 'Engine 計算中…' : 'Best move'}</button>
       </div>
-      <div class="btns"><button class="btn primary grow" id="x-end">結束推演</button></div>
+      <div class="btns"><button class="btn primary grow" id="x-end">結束</button></div>
     </div>`;
   document.getElementById('x-reset').addEventListener('click', () => {
     ex.game = new Chess(ex.startFen); ex.last = ex.startLast; ex.hl = []; ex.wantBest = false;
@@ -905,8 +905,8 @@ function wrongMove(s, mv) {
   let why = s.legacy || offBook ? '' : T.whyText(q, mv.san);
   if (!why && s.kind === 'drill') why = '這不是這套開局要練的走法。';
   s.msg = offBook
-    ? { kind: 'bad', title: `${mv.san} 不是這套的主線`, text: '這步本身不差，但這套開局走別步，再想想。' }
-    : { kind: 'bad', title: `${mv.san} 不對`, text: why };
+    ? { kind: 'bad', title: `${mv.san}：非 Main line`, text: '可下，但不在本套 Repertoire。' }
+    : { kind: 'bad', title: `${mv.san}?`, text: why };
   const reply = s.legacy || offBook ? null : T.pickReply(q, mv.san, s.game.fen());
   updateBoard(s, { animate: true });
   updatePanel(s, true);
@@ -930,8 +930,8 @@ function rightMove(s, mv, kind) {
   s.status = 'ok';
   s.hl = [];
   s.msg = kind === 'best'
-    ? { kind: 'ok', title: '答對了', text: '' }
-    : { kind: 'ok', title: '也可以！', text: `最佳是 ${s.q.best}。` };
+    ? { kind: 'ok', title: '正確', text: '' }
+    : { kind: 'ok', title: '可行', text: `Best move：${s.q.best}` };
   s.afterRight(s, mv, kind);
 }
 
@@ -940,7 +940,7 @@ function giveUp(s) {
   markFailed(s);
   s.revealed = true;
   s.hl = hintSquares(s);
-  s.msg = { kind: 'info', title: '看答案', text: `答案是 ${s.q.best}，請照著走一次。` };
+  s.msg = { kind: 'info', title: 'Solution', text: `${s.q.best}，請走一次。` };
   updateBoard(s);
   updatePanel(s, true);
 }
@@ -964,10 +964,10 @@ function hintHtml(s) {
 function recText(rec) {
   if (!rec) return '';
   let t;
-  if (rec.box > rec.from) t = `升到第 ${rec.box} 盒，${rec.days} 天後再出現。`;
-  else if (rec.box === rec.from && rec.box === 5) t = `留在第 5 盒，${rec.days} 天後再出現。`;
-  else t = '回到第 1 盒，等一下會再練。';
-  if (!rec.saved) t += '（這台裝置存不了進度。）';
+  if (rec.box > rec.from) t = `Box ${rec.box}・${rec.days} 天後複習`;
+  else if (rec.box === rec.from && rec.box === 5) t = `Box 5・${rec.days} 天後複習`;
+  else t = 'Box 1・稍後再出';
+  if (!rec.saved) t += '（進度未儲存）';
   return t;
 }
 
@@ -988,7 +988,7 @@ function puzzleRight(c, mv, kind) {
   let t = 650;
   if (kind === 'alt') {
     // 走的不是最佳著：先讓使用者看清楚自己的走法，再把棋子滑回去、改走最佳著，後面的局面才對得上
-    c.msg = { kind: 'ok', title: '也可以！', text: `最佳是 ${q.best}。接下來照 ${q.best} 的局面繼續。` };
+    c.msg = { kind: 'ok', title: '可行', text: `Best move：${q.best}，以此續行。` };
     updatePanel(c);
     t = 1400;
     later(c, t, () => {
@@ -1015,7 +1015,7 @@ function startStep(c, i) {
   c.busy = false;
   c.status = '';
   c.hl = [];
-  c.msg = i === 0 ? null : { kind: 'info', title: `第 ${i + 1} 步`, text: '輪到你走。' };
+  c.msg = i === 0 ? null : { kind: 'info', title: `Step ${i + 1}`, text: '' };
   updateBoard(c);
   updatePanel(c, true);
 }
@@ -1042,7 +1042,7 @@ function puzzlePanel(c) {
       ${total > 1 ? `<div class="stepbar">第 ${c.idx + 1} / ${total} 步</div>` : ''}
       ${msgHtml(c.msg)}
       ${hintHtml(c)}
-      <div class="btns actions"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>看答案</button></div>`;
+      <div class="btns actions"><button class="btn grow" id="giveup"${c.busy || c.revealed ? ' disabled' : ''}>Solution</button></div>`;
     document.getElementById('giveup').addEventListener('click', () => giveUp(c));
     return;
   }
@@ -1051,34 +1051,33 @@ function puzzlePanel(c) {
   const meta = `${p.category ? `<span class="pill">${esc(CAT[p.category] || p.category)}</span>` : ''}${tags}${p.opening ? `<span class="pill">${esc(p.opening)}</span>` : ''}`;
   const hasLine = c.lineFens && c.lineFens.length > 1;
   const idx = c.lineIdx;
-  const link = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">在 chess.com 看這盤</a>` : '';
-  const title = ok ? (c.qs.length > 1 ? '全部答對了' : '答對了') : '完成了';
+  const link = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? `<a class="small" href="${esc(p.url)}" target="_blank" rel="noopener">chess.com 原局</a>` : '';
+  const title = ok ? 'Solved' : 'Completed';
   el.innerHTML = `
     <div class="result ${ok ? 'ok' : 'info'}">
       <h3>${title}</h3>
-      ${c.msg && c.msg.title === '也可以！' ? `<div><b>也可以！</b>${esc(c.msg.text)}</div>` : ''}
-      ${!ok ? '<div>中間有答錯或看答案，這題之後會再出現。</div>' : ''}
-      ${p.played_san ? `<div>實戰你走的：<b>${esc(moveLabel(p, p.played_san))}</b></div>` : ''}
-      <div>最佳著：<b>${esc(p.best_san)}</b>${p.accept_san.length > 1 ? `（也可以：${esc(p.accept_san.filter(x => norm(x) !== norm(p.best_san)).join('、'))}）` : ''}</div>
+      ${c.msg && c.msg.title === '可行' ? `<div><b>可行</b>　${esc(c.msg.text)}</div>` : ''}
+      ${!ok ? '<div>有錯誤或使用 Solution，將再次出題。</div>' : ''}
+      ${p.played_san ? `<div>實戰：<b>${esc(moveLabel(p, p.played_san))}</b></div>` : ''}
+      <div>Best move：<b>${esc(p.best_san)}</b>${p.accept_san.length > 1 ? `（亦可：${esc(p.accept_san.filter(x => norm(x) !== norm(p.best_san)).join('、'))}）` : ''}</div>
       ${p.explanation ? `<p>${esc(p.explanation)}</p>` : ''}
       <div>${meta}</div>
-      <div class="small muted" style="margin-top:6px">${esc(recText(c.rec))}${c.retried ? '（重試不計分）' : ''}</div>
+      <div class="small muted" style="margin-top:6px">${esc(recText(c.rec))}${c.retried ? '（Retry 不計分）' : ''}</div>
       ${link}
     </div>
-    ${hasLine ? `<div class="card"><b>正確下法示範</b>
-      <div class="small muted">照最佳著走下去，局面接下來會這樣發展。用下方按鈕一步一步看。</div>
+    ${hasLine ? `<div class="card"><b>Best line</b>
       <div class="line">${fmtLine(p, idx)}</div></div>` : ''}
     <div class="actions">
       ${hasLine ? `<div class="btns">
         <button class="btn icon" id="l-first" aria-label="回到題目局面">${ICON.first}</button>
         <button class="btn icon" id="l-prev" aria-label="上一步">${ICON.prev}</button>
         <button class="btn icon" id="l-next" aria-label="下一步">${ICON.next}</button>
-        <button class="btn grow" id="l-play">${ICON.play}自動播放</button>
+        <button class="btn grow" id="l-play">${ICON.play}Play</button>
       </div>` : ''}
       <div class="btns">
-        <button class="btn grow" id="explore">自己推演</button>
-        ${!ok ? '<button class="btn grow" id="retry">重試這題</button>' : ''}
-        <button class="btn primary grow" id="next">下一題</button>
+        <button class="btn grow" id="explore">Analysis</button>
+        ${!ok ? '<button class="btn grow" id="retry">Retry</button>' : ''}
+        <button class="btn primary grow" id="next">Next</button>
       </div>
     </div>`;
   document.getElementById('explore').addEventListener('click', () => startExplore(c));
@@ -1296,8 +1295,8 @@ function drillRight(s, mv, kind) {
     s.stats.clean++;
     s.rec = store.record(s.nodeId, true);
   }
-  const text = kind === 'best' ? q.idea : `主線是 ${q.best}${q.idea ? '：' + q.idea : '。'}`;
-  s.msg = { kind: 'ok', title: kind === 'best' ? '答對了' : '也可以！', text };
+  const text = kind === 'best' ? q.idea : `Main line：${q.best}${q.idea ? '。' + q.idea : ''}`;
+  s.msg = { kind: 'ok', title: kind === 'best' ? '正確' : '可行', text };
   s.q = null;
   updateBoard(s, { animate: true });
   updatePanel(s, true);
@@ -1335,13 +1334,13 @@ function drillPanel(s) {
   if (s.done) {
     const st = s.stats;
     el.innerHTML = `
-      <div class="result ok"><h3>這條線練完了</h3>
+      <div class="result ok"><h3>Line complete</h3>
         <p>你走了 ${st.me} 步，一次就對的有 ${st.clean} 步。</p></div>
       ${msgHtml(s.msg)}
       ${list}
       <div class="actions">
-        <div class="btns"><button class="btn grow" id="explore">自己推演</button><a class="btn grow" href="#/openings/drill">換一套</a></div>
-        <div class="btns"><button class="btn primary grow" id="again">再練一次</button></div>
+        <div class="btns"><button class="btn grow" id="explore">Analysis</button><a class="btn grow" href="#/openings/drill">換 Repertoire</a></div>
+        <div class="btns"><button class="btn primary grow" id="again">重練</button></div>
       </div>`;
     document.getElementById('again').addEventListener('click', () => pageDrill(s.rep.id));
     document.getElementById('explore').addEventListener('click', () => startExplore(s));
@@ -1352,8 +1351,8 @@ function drillPanel(s) {
     ${hintHtml(s)}
     ${list}
     <div class="btns actions">
-      <button class="btn grow" id="giveup"${s.busy || s.revealed || !s.q ? ' disabled' : ''}>看答案</button>
-      <button class="btn grow" id="restart">重新開始</button>
+      <button class="btn grow" id="giveup"${s.busy || s.revealed || !s.q ? ' disabled' : ''}>Solution</button>
+      <button class="btn grow" id="restart">重來</button>
     </div>`;
   document.getElementById('giveup').addEventListener('click', () => giveUp(s));
   document.getElementById('restart').addEventListener('click', () => pageDrill(s.rep.id));
@@ -1377,26 +1376,26 @@ function pageSettings() {
   const cnt = store.counts();
   const set = store.getSettings();
   $view.innerHTML = `
-    <div class="card"><h3 style="margin-top:0">練習進度</h3>
+    <div class="card"><h3 style="margin-top:0">進度</h3>
       <p>已練習 ${cnt.total} 題。各盒題數：${cnt.boxes.map((n, i) => `第${i + 1}盒 ${n}`).join('，')}。</p>
       <div class="btns">
-        <button class="btn grow" id="exp">匯出進度（JSON 檔）</button>
-        <button class="btn grow" id="cpy">複製進度文字</button>
+        <button class="btn grow" id="exp">匯出 JSON</button>
+        <button class="btn grow" id="cpy">複製</button>
       </div>
-      <label class="small muted" for="imp">匯入進度檔（會取代目前進度）</label>
+      <label class="small muted" for="imp">匯入（覆蓋現有進度）</label>
       <div class="btns"><input type="file" id="imp" accept="application/json,.json"></div>
-      <div class="btns"><button class="btn danger grow" id="clr">清除全部進度</button></div>
+      <div class="btns"><button class="btn danger grow" id="clr">清除進度</button></div>
       <div id="msg"></div>
     </div>
     <div class="card"><h3 style="margin-top:0">外觀</h3>
-      <label class="small muted" for="ui">背景模式（棋盤顏色不受影響）</label>
-      <select id="ui"><option value="auto"${set.ui === 'auto' ? ' selected' : ''}>跟隨手機設定</option><option value="light"${set.ui === 'light' ? ' selected' : ''}>淺色</option><option value="dark"${set.ui === 'dark' ? ' selected' : ''}>深色</option></select>
+      <label class="small muted" for="ui">背景</label>
+      <select id="ui"><option value="auto"${set.ui === 'auto' ? ' selected' : ''}>跟隨系統</option><option value="light"${set.ui === 'light' ? ' selected' : ''}>淺色</option><option value="dark"${set.ui === 'dark' ? ' selected' : ''}>深色</option></select>
     </div>
     <div class="card"><h3 style="margin-top:0">棋盤與音效</h3>
-      <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 走子音效</label>
-      <label class="small muted" for="cap">吃子音效（選了就會試聽）</label>
+      <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 音效</label>
+      <label class="small muted" for="cap">Capture 音效</label>
       <div class="btns" style="margin-top:4px"><select id="cap" style="flex:1">${Object.entries(audio.CAPTURE_STYLES).map(([k, v]) => `<option value="${k}"${set.capture === k ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="btn" id="cap-play">試聽</button></div>
-      <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> 顯示評估條（棋盤左側，白色越多白方越好）</label>
+      <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> Eval bar</label>
       <label class="small muted" for="theme">棋盤配色</label>
       <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
       <div class="board-slot" id="theme-prev" style="margin-top:10px"></div>
@@ -1405,7 +1404,7 @@ function pageSettings() {
       <p>資料產生時間：${state.report ? esc(fmtDate(state.report.generated)) : '讀不到'}</p>
       <p>題目數：${state.puzzles.length}${state.skipped ? `（有 ${state.skipped} 題格式不對，已略過）` : ''}</p>
       <p>帳號：${esc(state.report?.username || '—')}</p>
-      <div class="btns"><button class="btn grow" id="upd">檢查更新並重新載入</button></div>
+      <div class="btns"><button class="btn grow" id="upd">檢查更新</button></div>
     </div>
     <p class="small muted">Tactix 版本 ${esc(APP_VERSION)}<br>棋子圖：cburnett（CC BY-SA）。棋規：chess.js（BSD）。引擎：Stockfish.js（GPL-3.0）。詳見 vendor/LICENSES.md。</p>`;
   const prev = () => {
