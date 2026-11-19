@@ -116,6 +116,7 @@ export function getSettings() {
     sound: o && typeof o.sound === 'boolean' ? o.sound : true,
     board: o && o.board === 'brown' ? 'brown' : 'green',
     ui: o && (o.ui === 'light' || o.ui === 'dark') ? o.ui : 'auto',
+    evalbar: o && typeof o.evalbar === 'boolean' ? o.evalbar : true,
   };
   return smem;
 }

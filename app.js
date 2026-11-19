@@ -3,8 +3,9 @@ import * as store from './store.js';
 import { Board, renderBoard } from './board.js';
 import * as audio from './audio.js';
 import * as T from './trainer.js';
+import * as engine from './engine.js';
 
-export const APP_VERSION = '2.0.4'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.1.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -193,6 +194,19 @@ const ICON = {
   play: SVG('<path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none"/>'),
 };
 
+// 「你執白／你執黑」標籤
+function sideChip(color) {
+  const b = color === 'black';
+  return `<span class="side ${b ? 'b' : 'w'}"><img src="vendor/pieces/${b ? 'b' : 'w'}K.svg" alt="">你執${b ? '黑' : '白'}</span>`;
+}
+
+// 棋盤＋左側評估條
+function boardRowHtml() {
+  const bar = store.getSettings().evalbar
+    ? '<div class="evalbar pending" id="evalbar" aria-label="局面評估"><div class="fill"></div><span class="ev"></span></div>' : '';
+  return `<div class="bwrap">${bar}<div id="board" class="board-wrap"></div></div>`;
+}
+
 // right：標題列右邊的額外內容（HTML）
 function setTitle(text, back, right = '') {
   $title.innerHTML = (back ? `<a class="back" href="${esc(back)}" aria-label="返回">‹</a>` : '') + esc(text) + (MOCK ? ' <small>（測試資料）</small>' : '')
@@ -219,6 +233,8 @@ window.addEventListener('orientationchange', () => setTimeout(updateFitH, 200));
 function route() {
   stopTimer();
   closeSheet();
+  engine.stop();
+  state.evalFen = null;
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const page = parts[0] || 'overview';
   document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === page));
@@ -627,8 +643,10 @@ function drawPuzzle() {
   const p = c.puzzle;
   document.getElementById('split').classList.remove('solo');
   document.getElementById('bcol').innerHTML = `
-    <div class="turn"><span class="dotc ${p.color === 'black' ? 'b' : 'w'}"></span><span>輪到你走（${p.color === 'black' ? '黑方' : '白方'}），找出更好的一步</span></div>
-    <div id="board" class="board-wrap"></div>`;
+    <div class="turn">${sideChip(p.color)}<span>找出更好的一步</span></div>
+    ${boardRowHtml()}`;
+  state.evalFen = null;
+  if (store.getSettings().evalbar) engine.warm();
   document.getElementById('pz').innerHTML = `<div id="panel"></div>`;
   practiceTitle();
   state.board = new Board(document.getElementById('board'));
@@ -680,8 +698,9 @@ function kingSquare(g, color) {
 // o.animate：這次更新要不要讓棋子滑過去
 function updateBoard(s, o = {}) {
   if (!s || !state.board) return;
-  let fen = s.game.fen(), last = s.last;
-  if (s.lineIdx != null && s.lineFens) {
+  const ex = s.explore;
+  let fen = ex ? ex.game.fen() : s.game.fen(), last = ex ? ex.last : s.last;
+  if (!ex && s.lineIdx != null && s.lineFens) {
     const x = s.lineFens[s.lineIdx];
     fen = x.fen; last = x.last;
   }
@@ -695,13 +714,187 @@ function updateBoard(s, o = {}) {
     orientation: s.orientation,
     last,
     check,
-    hl: s.hl,
-    status: s.status,
-    interactive: !!s.q && !s.busy && !s.done,
-    turn: s.game.turn(),
-    legal: sq => s.game.moves({ square: sq, verbose: true }),
-    onMove: (from, to, promo) => onUserMove(s, from, to, promo),
+    hl: ex ? ex.hl : s.hl,
+    status: ex ? '' : s.status,
+    interactive: ex ? !ex.game.isGameOver() : (!!s.q && !s.busy && !s.done),
+    turn: (ex ? ex.game : s.game).turn(),
+    legal: sq => (ex ? ex.game : s.game).moves({ square: sq, verbose: true }),
+    onMove: ex ? (from, to, promo) => exploreMove(s, from, to, promo) : (from, to, promo) => onUserMove(s, from, to, promo),
     animate: !!o.animate,
+  });
+  refreshEval(s, fen);
+}
+
+/* ---------- 評估條 ---------- */
+
+const evalCache = new Map();   // fen -> 引擎算完的結果
+
+function cpFromWp(wp) {
+  const w = Math.max(0.5, Math.min(99.5, wp));
+  return -Math.log(100 / w - 1) / 0.00368208;
+}
+
+// 事先算好的評估（題目各步、開局我方節點）：回傳白方勝率，沒有就回 null
+function precomputedWp(s, fen) {
+  const k = T.fen4(fen);
+  const white = fen.split(' ')[1] === 'w';
+  const best = map => {
+    const v = Object.values(map || {}).map(Number).filter(Number.isFinite);
+    return v.length ? Math.max(...v) : null;
+  };
+  let b = null;
+  if (s.kind === 'puzzle') {
+    for (const q of s.qs || []) if (T.fen4(q.fen) === k) { b = best(q.moves); break; }
+  } else if (s.rep) {
+    const node = s.rep.nodes[k];
+    if (node && node.me) b = best(node.accept);
+  }
+  return b == null ? null : (white ? b : 100 - b);
+}
+
+function paintEval(s, r) {
+  const bar = document.getElementById('evalbar');
+  if (!bar) return;
+  bar.classList.remove('pending');
+  bar.classList.toggle('flip', s.orientation === 'black');
+  const w = Math.max(0, Math.min(100, r.wpWhite));
+  bar.querySelector('.fill').style.height = w + '%';
+  let txt, whiteAhead;
+  if (r.mate != null) {
+    txt = r.mate === 0 ? '#' : 'M' + Math.abs(r.mate);
+    whiteAhead = r.mate === 0 ? w > 50 : r.mate > 0;
+  } else {
+    const p = Math.abs(r.cp) / 100;
+    txt = p >= 10 ? String(Math.round(p)) : p.toFixed(1);
+    whiteAhead = r.cp >= 0;
+  }
+  const lab = bar.querySelector('.ev');
+  lab.textContent = txt;
+  lab.className = 'ev ' + (whiteAhead ? 'w' : 'b');
+  bar.setAttribute('aria-label', `局面評估：${whiteAhead ? '白方' : '黑方'}優 ${txt}`);
+}
+
+function refreshEval(s, fen) {
+  if (!document.getElementById('evalbar')) return;
+  if (state.evalFen === fen) return;
+  state.evalFen = fen;
+  state.evalBest = null;
+  let g;
+  try { g = new Chess(fen); } catch (e) { return; }
+  if (g.isCheckmate()) { paintEval(s, { wpWhite: g.turn() === 'w' ? 0 : 100, mate: 0 }); return; }
+  if (g.isDraw()) { paintEval(s, { wpWhite: 50, cp: 0 }); return; }
+  const hit = evalCache.get(fen);
+  if (hit) {
+    paintEval(s, hit);
+    state.evalBest = { fen, best: hit.best };
+    maybeShowBest(s);
+    return;
+  }
+  const pre = precomputedWp(s, fen);
+  if (pre != null) paintEval(s, { wpWhite: pre, cp: cpFromWp(pre) });
+  else document.getElementById('evalbar').classList.add('pending');
+  if (!engine.available()) return;
+  engine.analyze(fen, r => {
+    if (state.evalFen !== fen) return;
+    if (r.best) state.evalBest = { fen, best: r.best };
+    if (r.depth >= 6 || r.done) paintEval(s, r);
+    if (r.done) evalCache.set(fen, r);
+    maybeShowBest(s);
+  });
+}
+
+/* ---------- 自己推演 ---------- */
+
+function startExplore(s) {
+  stopTimer();
+  const fromLine = !!(s.lineIdx != null && s.lineFens);
+  const fen = fromLine ? s.lineFens[s.lineIdx].fen : s.game.fen();
+  const last = fromLine ? s.lineFens[s.lineIdx].last : s.last;
+  s.explore = { game: new Chess(fen), last, hl: [], startFen: fen, startLast: last, wantBest: false };
+  engine.warm();
+  updateBoard(s);
+  updatePanel(s);
+}
+
+function exploreMove(s, from, to, promo) {
+  const ex = s.explore;
+  if (!ex) return;
+  let mv;
+  try { mv = ex.game.move({ from, to, promotion: promo || 'q' }); } catch (e) { return; }
+  ex.last = { from: mv.from, to: mv.to };
+  ex.hl = [];
+  ex.wantBest = false;
+  audio.play(mv.captured ? 'capture' : 'move');
+  updateBoard(s, { animate: true });
+  updatePanel(s);
+}
+
+// 使用者按了「最佳著」：引擎有結果就標出來
+function maybeShowBest(s) {
+  const ex = s && s.explore;
+  if (!ex || !ex.wantBest) return;
+  const b = state.evalBest;
+  if (!b || b.fen !== ex.game.fen() || !b.best || b.best === '(none)') return;
+  ex.hl = [b.best.slice(0, 2), b.best.slice(2, 4)];
+  ex.wantBest = false;
+  if (state.board) updateBoard(s);
+  updatePanel(s);
+}
+
+function fmtMoves(startFen, sans) {
+  const parts = startFen.split(' ');
+  let white = parts[1] === 'w';
+  let n = parseInt(parts[5], 10) || 1;
+  const out = [];
+  sans.forEach((m, i) => {
+    if (white) out.push(`${n}.${m}`);
+    else { out.push(i === 0 ? `${n}…${m}` : m); n++; }
+    white = !white;
+  });
+  return out.join(' ');
+}
+
+function explorePanel(s) {
+  const el = document.getElementById('panel');
+  if (!el) return;
+  const ex = s.explore;
+  const hist = ex.game.history();
+  const noEngine = !engine.available();
+  const g = ex.game;
+  const end = g.isCheckmate() ? '將死。' : g.isDraw() ? '和棋。' : '';
+  el.innerHTML = `
+    <div class="result info"><h3>自己推演</h3>
+      <p>黑白兩邊都由你走${noEngine ? '。' : '，評估條會跟著更新。'}${end ? `<b>${end}</b>` : ''}</p>
+      ${noEngine ? '<p class="small muted">還沒有放引擎檔，只能移動棋子、沒有評估。</p>' : ''}</div>
+    <div class="line small movelist">${hist.length ? esc(fmtMoves(ex.startFen, hist)) : '從這個局面開始，隨意走走看。'}</div>
+    <div class="actions">
+      <div class="btns">
+        <button class="btn icon" id="x-reset" aria-label="回到推演起點"${hist.length ? '' : ' disabled'}>${ICON.first}</button>
+        <button class="btn icon" id="x-undo" aria-label="上一步"${hist.length ? '' : ' disabled'}>${ICON.prev}</button>
+        <button class="btn grow" id="x-best"${noEngine || end ? ' disabled' : ''}>${ex.wantBest ? '引擎思考中…' : '最佳著'}</button>
+      </div>
+      <div class="btns"><button class="btn primary grow" id="x-end">結束推演</button></div>
+    </div>`;
+  document.getElementById('x-reset').addEventListener('click', () => {
+    ex.game = new Chess(ex.startFen); ex.last = ex.startLast; ex.hl = []; ex.wantBest = false;
+    updateBoard(s); updatePanel(s);
+  });
+  document.getElementById('x-undo').addEventListener('click', () => {
+    ex.game.undo();
+    const h = ex.game.history({ verbose: true });
+    ex.last = h.length ? { from: h[h.length - 1].from, to: h[h.length - 1].to } : ex.startLast;
+    ex.hl = []; ex.wantBest = false;
+    updateBoard(s); updatePanel(s);
+  });
+  document.getElementById('x-best').addEventListener('click', () => {
+    ex.wantBest = true;
+    updatePanel(s);
+    maybeShowBest(s);
+  });
+  document.getElementById('x-end').addEventListener('click', () => {
+    s.explore = null;
+    updateBoard(s);
+    updatePanel(s);
   });
 }
 
@@ -831,7 +1024,8 @@ function recText(rec) {
 }
 
 function updatePanel(s, scroll = false) {
-  if (s.kind === 'puzzle') puzzlePanel(s);
+  if (s.explore) explorePanel(s);
+  else if (s.kind === 'puzzle') puzzlePanel(s);
   else drillPanel(s);
 }
 
@@ -934,10 +1128,12 @@ function puzzlePanel(c) {
         <button class="btn grow" id="l-play">${ICON.play}自動播放</button>
       </div>` : ''}
       <div class="btns">
+        <button class="btn grow" id="explore">自己推演</button>
         ${!ok ? '<button class="btn grow" id="retry">重試這題</button>' : ''}
         <button class="btn primary grow" id="next">下一題</button>
       </div>
     </div>`;
+  document.getElementById('explore').addEventListener('click', () => startExplore(c));
   const max = hasLine ? c.lineFens.length - 1 : 0;
   const go = i => {
     const prev = c.lineIdx;
@@ -1026,11 +1222,13 @@ function pageDrill(id) {
   };
   $view.innerHTML = `<div class="split" id="split">
     <div class="split-board" id="bcol">
-      <div class="turn"><span class="dotc ${rep.color === 'black' ? 'b' : 'w'}"></span><span>你執${rep.color === 'black' ? '黑' : '白'}：${esc(rep.name)}</span></div>
-      <div id="board" class="board-wrap"></div>
+      <div class="turn">${sideChip(rep.color)}<span>${esc(rep.name)}</span></div>
+      ${boardRowHtml()}
     </div>
     <div class="split-info"><div id="panel"></div></div></div>`;
   state.board = new Board(document.getElementById('board'));
+  state.evalFen = null;
+  if (store.getSettings().evalbar) engine.warm();
   updateBoard(s);
   updatePanel(s);
   later(s, 500, () => drillAdvance(s));
@@ -1193,11 +1391,12 @@ function drillPanel(s) {
         <p>你走了 ${st.me} 步，一次就對的有 ${st.clean} 步。</p></div>
       ${msgHtml(s.msg)}
       ${list}
-      <div class="btns actions">
-        <button class="btn primary grow" id="again">再練一次</button>
-        <a class="btn grow" href="#/openings/drill">換一套</a>
+      <div class="actions">
+        <div class="btns"><button class="btn grow" id="explore">自己推演</button><a class="btn grow" href="#/openings/drill">換一套</a></div>
+        <div class="btns"><button class="btn primary grow" id="again">再練一次</button></div>
       </div>`;
     document.getElementById('again').addEventListener('click', () => pageDrill(s.rep.id));
+    document.getElementById('explore').addEventListener('click', () => startExplore(s));
     return;
   }
   el.innerHTML = `
@@ -1247,6 +1446,7 @@ function pageSettings() {
     </div>
     <div class="card"><h3 style="margin-top:0">棋盤與音效</h3>
       <label class="check"><input type="checkbox" id="snd"${set.sound ? ' checked' : ''}> 走子音效</label>
+      <label class="check"><input type="checkbox" id="evb"${set.evalbar ? ' checked' : ''}> 顯示評估條（棋盤左側，白色越多白方越好）</label>
       <label class="small muted" for="theme">棋盤配色</label>
       <select id="theme"><option value="green"${set.board === 'green' ? ' selected' : ''}>綠白格（預設）</option><option value="brown"${set.board === 'brown' ? ' selected' : ''}>棕色系</option></select>
       <div class="board-slot" id="theme-prev" style="margin-top:10px"></div>
@@ -1257,7 +1457,7 @@ function pageSettings() {
       <p>帳號：${esc(state.report?.username || '—')}</p>
       <div class="btns"><button class="btn grow" id="upd">檢查更新並重新載入</button></div>
     </div>
-    <p class="small muted">Tactix 版本 ${esc(APP_VERSION)}<br>棋子圖：cburnett（CC BY-SA）。棋規：chess.js（BSD）。詳見 vendor/LICENSES.md。</p>`;
+    <p class="small muted">Tactix 版本 ${esc(APP_VERSION)}<br>棋子圖：cburnett（CC BY-SA）。棋規：chess.js（BSD）。引擎：Stockfish.js（GPL-3.0）。詳見 vendor/LICENSES.md。</p>`;
   const prev = () => {
     try { renderBoard(document.getElementById('theme-prev'), { fen: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', orientation: 'white', mini: true }); } catch (e) { /* 預覽失敗不影響設定 */ }
   };
@@ -1267,6 +1467,7 @@ function pageSettings() {
     audio.unlock();
     if (ev.target.checked) audio.play('move');
   });
+  document.getElementById('evb').addEventListener('change', ev => store.setSetting('evalbar', ev.target.checked));
   document.getElementById('ui').addEventListener('change', ev => {
     const v = ev.target.value;
     store.setSetting('ui', v === 'light' || v === 'dark' ? v : 'auto');

@@ -260,9 +260,14 @@ textarea { width: 100%; min-height: 80px; font: inherit; }
   main.wide .split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   main.wide .split-board { flex: none; }
   main.wide .turn { margin: 2px 0 4px; font-size: .9rem; }
-  main.wide .board-wrap {
-    width: min(100%, calc(var(--fit-h, 600px) - 250px)); min-width: 220px;
-    margin: 0 auto 4px;
+  /* 版面交給 flex：頂列、內容、分頁列上下排，內容區自動吃掉剩下的高度，不靠程式量高度 */
+  body.fit { height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
+  body.fit .topbar { flex: none; }
+  body.fit .tabbar { position: static; flex: none; }
+  body.fit main.wide { flex: 1 1 auto; height: auto; min-height: 0; width: 100%; container-type: size; }
+  main.wide .bwrap { width: min(100%, calc(var(--fit-h, 600px) - 250px)); min-width: 220px; margin: 0 auto 4px; }
+  @supports (container-type: size) {
+    body.fit main.wide .bwrap { width: min(100%, calc(100cqh - 235px)); }
   }
   main.wide .split-info { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   main.wide #pz { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -310,3 +315,34 @@ svg.i { width: 20px; height: 20px; flex: none; }
   .sheet-scrim { align-items: center; }
   .sheet { border-radius: 16px; max-width: 420px; }
 }
+
+/* 棋盤列：左側評估條 */
+.bwrap { display: flex; gap: 4px; align-items: stretch; width: 100%; max-width: 500px; margin: 8px auto; }
+.bwrap .board-wrap { flex: 1; min-width: 0; margin: 0; max-width: none; }
+.evalbar {
+  position: relative; flex: none; width: 16px; border-radius: 3px; overflow: hidden;
+  background: #403d39; border: 1px solid rgba(0, 0, 0, .25);
+}
+.evalbar .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; background: #f4f4f2; transition: height .45s ease; }
+.evalbar.flip .fill { bottom: auto; top: 0; }
+.evalbar.pending .fill { opacity: .55; }
+.evalbar .ev { position: absolute; left: 0; right: 0; text-align: center; font-size: 8.5px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+.evalbar .ev.w { bottom: 3px; color: #403d39; }
+.evalbar .ev.b { top: 3px; color: #f4f4f2; }
+.evalbar.flip .ev.w { bottom: auto; top: 3px; }
+.evalbar.flip .ev.b { top: auto; bottom: 3px; }
+@media (min-width: 900px) {
+  .split .bwrap { max-width: none; margin: 4px 0; }
+}
+
+/* 你執白／你執黑 */
+.side {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  padding: 1px 10px 1px 3px; border-radius: 999px;
+  font-size: .82rem; font-weight: 700; line-height: 1.6;
+  border: 1px solid #403d39;
+}
+.side img { width: 20px; height: 20px; }
+.side.w { background: #fff; color: #222; }
+.side.b { background: #262421; color: #f4f4f2; }
+.turn { gap: 8px; }

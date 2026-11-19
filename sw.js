@@ -1,6 +1,6 @@
 // 改版時把 VERSION 加一，舊的程式快取會在 activate 時刪掉。
 // data/*.json 放在另一個快取（DATA_CACHE），改版時不清掉，避免離線時丟失資料。
-const VERSION = 'v2.0.4';
+const VERSION = 'v2.1.0';
 const STATIC_CACHE = 'chesscoach-static-' + VERSION;
 const DATA_CACHE = 'chesscoach-data';
 
@@ -12,6 +12,7 @@ const STATIC_ASSETS = [
   'board.js',
   'trainer.js',
   'audio.js',
+  'engine.js',
   'style.css',
   'manifest.webmanifest',
   'icons/icon-192.png',
@@ -20,12 +21,15 @@ const STATIC_ASSETS = [
   'vendor/chess.js',
   ...['w', 'b'].flatMap(c => ['K', 'Q', 'R', 'B', 'N', 'P'].map(t => `vendor/pieces/${c}${t}.svg`)),
 ];
+// 引擎檔（可能還沒放），抓不到不擋安裝
+const OPTIONAL_ASSETS = ['vendor/stockfish/stockfish-19-lite-single.js', 'vendor/stockfish/stockfish-19-lite-single.wasm'];
 const DATA_ASSETS = ['data/report.json', 'data/puzzles.json', 'data/openings.json'];
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const sc = await caches.open(STATIC_CACHE);
     await sc.addAll(STATIC_ASSETS.map(u => new Request(u, { cache: 'reload' })));
+    await Promise.all(OPTIONAL_ASSETS.map(u => sc.add(new Request(u, { cache: 'reload' })).catch(() => {})));
     const dc = await caches.open(DATA_CACHE);
     await Promise.all(DATA_ASSETS.map(async u => {
       try {
