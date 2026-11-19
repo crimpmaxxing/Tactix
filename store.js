@@ -133,6 +133,8 @@ export function getSettings() {
     // 學習模式：每批新線條數、各套開局目前的等級（{開局id: 1–4}）
     learnBatch: o && o.learnBatch != null && Number.isFinite(Number(o.learnBatch)) ? Math.min(10, Math.max(1, Math.floor(Number(o.learnBatch)))) : 4,
     learnLevel: cleanLevels(o && o.learnLevel),
+    // 每日新線上限（0＝不限）；達到後「下一步」改建議複習或實戰模擬
+    learnDaily: o && [0, 4, 8, 12, 16].includes(Number(o.learnDaily)) ? Number(o.learnDaily) : 8,
   };
   return smem;
 }

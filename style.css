@@ -529,3 +529,9 @@ main.ovpage { max-width: 1080px; }
 .btag.lv { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
 .brow.off .l > div:first-child, .brow.off .r b { color: var(--muted); }
 .bsum { margin: 2px 0 4px; display: flex; gap: 6px; align-items: center; }
+
+/* 下一步推薦卡 */
+.card.rec { border-left: 4px solid var(--accent, var(--good)); }
+.card.rec .rec-t { font-weight: 700; margin-bottom: 2px; }
+.card.rec .small { margin-top: 4px; }
+.card.rec .btns { margin-top: 10px; }

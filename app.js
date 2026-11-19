@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.5.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.6.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -342,10 +342,12 @@ function pageOpenings() {
   }
   const entry = learnEntry + `<a class="row chev" href="#/openings/drill">
     <div class="l"><div>從頭練</div><div class="small muted">從第一步開始，練一整套開局</div></div></a>`;
-  if (!r || !Array.isArray(r.openings)) { $view.innerHTML = entry + noData('開局資料'); return; }
+  const rec = state.openings && state.learnData ? recCardHtml(learnRecommend()) : '';
+  if (!r || !Array.isArray(r.openings)) { $view.innerHTML = rec + entry + noData('開局資料'); bindRecLinks($view); return; }
   const all = r.openings.map((o, i) => ({ o, i }));
-  $view.innerHTML = entry + colorSection('執白', all.filter(x => x.o.color === 'white')) +
+  $view.innerHTML = rec + entry + colorSection('執白', all.filter(x => x.o.color === 'white')) +
     colorSection('執黑', all.filter(x => x.o.color === 'black'));
+  bindRecLinks($view);
 }
 
 function mistakePuzzle(o, m) {
@@ -1456,6 +1458,94 @@ function learnDueTotal() {
   return n;
 }
 
+/* ----- 下一步推薦：到期先複習；否則挑「實戰比例 × 未學著法到達率」最高的章節學新線 ----- */
+
+const DAILY_KEY = 'chesscoach.v1.daily';
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+function dailyNew() {
+  try {
+    const o = JSON.parse(localStorage.getItem(DAILY_KEY) || 'null');
+    return o && o.date === todayStr() ? Number(o.lines) || 0 : 0;
+  } catch (e) { return 0; }
+}
+function bumpDailyNew() {
+  try { localStorage.setItem(DAILY_KEY, JSON.stringify({ date: todayStr(), lines: dailyNew() + 1 })); } catch (e) { /* 無痕模式等情況略過 */ }
+}
+
+function learnRecommend(now = Date.now()) {
+  if (!state.openings || !state.learnData) return null;
+  const ctxs = state.openings.map(r => learnCtx(r.id)).filter(Boolean);
+  let rev = null;
+  for (const c of ctxs) {
+    const due = L.repProgress(c.rep, c.ld, c.thr, now).due;
+    if (due && (!rev || due > rev.n)) rev = { kind: 'review', c, n: due };
+  }
+  if (rev) return rev;
+  let cand = null;
+  for (const c of ctxs) {
+    const w = Number(c.ld.weight) > 0 ? Number(c.ld.weight) : 0.05;
+    for (const ch of c.ld.chapters) {
+      let score = 0;
+      for (const it of L.chapterMoves(c.rep, ch, c.thr)) {
+        if (L.moveStatus(it.id, now) === 'new') score += Number(it.line.moves[it.idx].reach) || 0;
+      }
+      score *= w;
+      if (score > 0 && (!cand || score > cand.score)) cand = { kind: 'new', c, ch, score };
+    }
+  }
+  if (!cand) {
+    const c = ctxs.slice().sort((a, b) => (Number(b.ld.weight) || 0) - (Number(a.ld.weight) || 0))[0];
+    return { kind: 'wait', c };
+  }
+  cand.lines = L.newLines(cand.c.rep, cand.ch, cand.c.thr, store.getSettings().learnBatch).length;
+  const cap = store.getSettings().learnDaily;
+  const today = dailyNew();
+  if (cap && today >= cap) return { kind: 'rest', c: cand.c, next: cand, today };
+  return cand;
+}
+
+function recHref(r) {
+  if (!r) return '#/learn';
+  if (r.kind === 'review') return `#/learn/${enc(r.c.rep.id)}/review`;
+  if (r.kind === 'new') return `#/learn/${enc(r.c.rep.id)}/${enc(r.ch.id)}/new`;
+  return `#/openings/drill/${enc(r.c.rep.id)}`;
+}
+
+// 「下一步」卡片（開局頁、學習模式頁、每輪結束時用）
+function recCardHtml(r) {
+  if (!r) return '';
+  let title, text, btn, extra = '';
+  if (r.kind === 'review') {
+    title = '下一步：複習';
+    text = `${r.c.rep.name}　${r.n} 步到期`;
+    btn = '開始複習';
+  } else if (r.kind === 'new') {
+    title = '下一步：學新線';
+    text = `${r.c.rep.name}・${r.ch.title}　${r.lines} 條`;
+    btn = '開始學習';
+    extra = `<div class="small muted">你的對局 ${Math.round((Number(r.c.ld.weight) || 0) * 100)}% 是這套開局；這章佔實戰 ${Math.round(r.ch.share * 100)}%。今天已學 ${dailyNew()} 條。</div>`;
+  } else if (r.kind === 'rest') {
+    title = `今天已學 ${r.today} 條新線`;
+    text = '已達每日上限，建議用實戰模擬鞏固，新線明天再學。';
+    btn = '實戰模擬';
+    extra = `<a class="btn grow" href="${esc(recHref(r.next))}">仍要再學一批</a>`;
+  } else {
+    title = '目前等級都學完了';
+    text = '等複習到期；九成練熟後會自動開放下一級。';
+    btn = '實戰模擬';
+  }
+  return `<div class="card rec"><div class="rec-t">${esc(title)}</div><div>${esc(text)}</div>${r.kind === 'rest' ? '' : extra}
+    <div class="btns"><a class="btn primary grow" href="${esc(recHref(r))}" data-rec>${esc(btn)}</a>${r.kind === 'rest' ? extra : ''}</div></div>`;
+}
+
+// 同一個網址時 hashchange 不會觸發，手動重跑路由
+function bindRecLinks(root) {
+  (root || document).querySelectorAll('a[data-rec], .rec a.btn').forEach(a => a.addEventListener('click', ev => {
+    const h = a.getAttribute('href');
+    if (h === location.hash) { ev.preventDefault(); route(); }
+  }));
+}
+
 function pageLearnList() {
   setTitle('學習模式', '#/openings');
   if (!state.openings || !state.learnData) { $view.innerHTML = NO_LEARN; return; }
@@ -1470,7 +1560,8 @@ function pageLearnList() {
         ${pbarHtml(p)}</div>
       <div class="r"><b>${p.due}</b><div>到期</div></div></a>`;
   }).join('');
-  $view.innerHTML = `<p class="muted small">選一套開局，分章學習常見分支。</p>${rows || NO_LEARN}${PKEY}`;
+  $view.innerHTML = `${recCardHtml(learnRecommend(now))}<p class="muted small">或自己選一套開局，分章學習常見分支。</p>${rows || NO_LEARN}${PKEY}`;
+  bindRecLinks($view);
 }
 
 function levelDesc(levels) {
@@ -1844,6 +1935,7 @@ function learnLineDone(s) {
     later(s, 1400, () => learnQuizStart(s));
     return;
   }
+  if (s.mode === 'new') bumpDailyNew();
   learnCheckLevel(s);
   s.phase = 'lineDone';
   s.busy = false;
@@ -2038,7 +2130,8 @@ function learnPanel(s) {
   if (s.mode === 'browse') { browsePanel(s, el); return; }
   const backBtn = `<a class="btn grow" href="${esc(s.back)}">${s.chap ? '回章節' : '回上頁'}</a>`;
   if (s.phase === 'empty') {
-    el.innerHTML = `${msgHtml(s.msg)}<div class="btns actions">${backBtn}</div>`;
+    el.innerHTML = `${msgHtml(s.msg)}${recCardHtml(learnRecommend())}<div class="btns actions">${backBtn}</div>`;
+    bindRecLinks(el);
     return;
   }
   if (s.phase === 'pre') { previewPanel(s, el); return; }
@@ -2121,7 +2214,9 @@ function summaryPanel(s, el, backBtn) {
   el.innerHTML = `
     <div class="result ok"><h3>${title}</h3><p>${text}</p></div>
     ${noticeHtml(s)}
-    <div class="btns actions">${again}${backBtn}</div>`;
+    ${recCardHtml(learnRecommend())}
+    <div class="btns actions">${again.replace('btn primary grow', 'btn grow')}${backBtn}</div>`;
+  bindRecLinks(el);
   const more = document.getElementById('l-more');
   if (more) more.addEventListener('click', () => {
     if (s.mode === 'new') learnStartNew(s); else learnStartFrom(s, s.fromPath || []);
@@ -2174,6 +2269,8 @@ function pageSettings() {
     <div class="card"><h3 style="margin-top:0">學習模式</h3>
       <label class="small muted" for="lbatch">每批學幾條新線</label>
       <select id="lbatch">${[1, 2, 3, 4, 5, 6, 8, 10].map(n => `<option value="${n}"${set.learnBatch === n ? ' selected' : ''}>${n} 條</option>`).join('')}</select>
+      <label class="small muted" for="ldaily">每日新線上限</label>
+      <select id="ldaily">${[4, 8, 12, 16, 0].map(n => `<option value="${n}"${set.learnDaily === n ? ' selected' : ''}>${n ? n + ' 條' : '不限'}</option>`).join('')}</select>
     </div>
     <div class="card"><h3 style="margin-top:0">音效診斷</h3>
       <div class="btns"><button class="btn grow" id="t-rec">測試錄音</button><button class="btn grow" id="t-syn">測試合成音</button><button class="btn grow" id="t-el">測試媒體播放</button></div>
@@ -2208,6 +2305,7 @@ function pageSettings() {
   document.getElementById('t-el').addEventListener('click', async () => { const r = await audio.testElement(); showDiag('媒體播放：' + r); });
   showDiag();
   document.getElementById('evb').addEventListener('change', ev => store.setSetting('evalbar', ev.target.checked));
+  document.getElementById('ldaily').addEventListener('change', ev => store.setSetting('learnDaily', Number(ev.target.value) || 0));
   document.getElementById('lbatch').addEventListener('change', ev => store.setSetting('learnBatch', Math.max(1, Math.min(10, Number(ev.target.value) || 4))));
   document.getElementById('ui').addEventListener('change', ev => {
     const v = ev.target.value;

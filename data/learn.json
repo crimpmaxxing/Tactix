@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-19T18:13:19",
+ "generated": "2026-11-19T18:42:23",
  "levels": [
   0.05,
   0.02,
@@ -8,6 +8,7 @@
  ],
  "repertoires": {
   "w-vgambit": {
+   "weight": 0.4996,
    "chapters": [
     {
      "id": "c1",
@@ -280,6 +281,7 @@
    ]
   },
   "b4-caro": {
+   "weight": 0.3389,
    "chapters": [
     {
      "id": "c1",
@@ -454,6 +456,7 @@
    ]
   },
   "bd-slav": {
+   "weight": 0.1017,
    "chapters": [
     {
      "id": "c1",
