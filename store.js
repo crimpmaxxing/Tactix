@@ -1,10 +1,14 @@
 // 練習進度：localStorage 讀寫全包 try/catch，讀不到就當全新開始。
 export const BASE_KEY = 'chesscoach.v1.progress';
 export let KEY = BASE_KEY;
+export const REVIEW_BASE = 'chesscoach.v1.review';
+let RKEY = REVIEW_BASE;
 // 測試資料模式（?mock=1）用另一個 key，才不會弄髒真正的進度。
 export function setNamespace(ns) {
   KEY = ns ? BASE_KEY + '.' + ns : BASE_KEY;
   mem = null;
+  RKEY = ns ? REVIEW_BASE + '.' + ns : REVIEW_BASE;
+  rmem = null;
 }
 export const INTERVALS = [0, 1, 3, 7, 21]; // 盒 1–5 的間隔（天）
 
@@ -82,6 +86,11 @@ export function replaceAll(obj) {
   }
   mem = normalize(obj);
   save();
+  // 新格式多一個 review 欄位；舊格式沒有就保留目前的覆盤進度
+  if (obj.review && typeof obj.review === 'object') {
+    rmem = normalizeReview(obj.review);
+    saveReview();
+  }
   return Object.keys(mem.items).length;
 }
 
@@ -91,7 +100,7 @@ export function clear() {
 }
 
 export function exportText() {
-  return JSON.stringify(load(), null, 2);
+  return JSON.stringify({ ...load(), review: loadReview() }, null, 2);
 }
 
 export function counts() {
@@ -99,6 +108,60 @@ export function counts() {
   const boxes = [0, 0, 0, 0, 0];
   for (const it of items) boxes[it.box - 1]++;
   return { total: items.length, boxes };
+}
+
+/* ---------- 覆盤進度：{v:1, games:{[id]:{marks:[ply…], done:ts|0}}} ---------- */
+let rmem = null;
+
+function normalizeReview(obj) {
+  const games = {};
+  if (obj && typeof obj === 'object' && obj.games && typeof obj.games === 'object') {
+    for (const [id, v] of Object.entries(obj.games)) {
+      if (!v || typeof v !== 'object') continue;
+      const marks = [...new Set((Array.isArray(v.marks) ? v.marks : [])
+        .map(Number).filter(n => Number.isInteger(n) && n >= 0))].sort((a, b) => a - b).slice(0, 3);
+      games[id] = { marks, done: Math.max(0, num(v.done, 0)) };
+    }
+  }
+  return { v: 1, games };
+}
+
+export function loadReview() {
+  if (rmem) return rmem;
+  let obj = null;
+  try {
+    const t = localStorage.getItem(RKEY);
+    if (t) obj = JSON.parse(t);
+  } catch (e) { obj = null; }
+  rmem = normalizeReview(obj);
+  return rmem;
+}
+
+function saveReview() {
+  try {
+    localStorage.setItem(RKEY, JSON.stringify(rmem));
+    return true;
+  } catch (e) { return false; }
+}
+
+export function getReview(id) {
+  return loadReview().games[id] || { marks: [], done: 0 };
+}
+
+export function setReviewMarks(id, marks) {
+  const m = loadReview();
+  const it = m.games[id] || { marks: [], done: 0 };
+  it.marks = [...new Set(marks)].sort((a, b) => a - b);
+  m.games[id] = it;
+  return saveReview();
+}
+
+export function setReviewDone(id, ts) {
+  const m = loadReview();
+  const it = m.games[id] || { marks: [], done: 0 };
+  it.done = ts;
+  m.games[id] = it;
+  return saveReview();
 }
 
 /* ---------- 偏好設定（音效、棋盤配色）---------- */

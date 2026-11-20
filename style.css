@@ -535,3 +535,88 @@ main.ovpage { max-width: 1080px; }
 .card.rec .rec-t { font-weight: 700; margin-bottom: 2px; }
 .card.rec .small { margin-top: 4px; }
 .card.rec .btns { margin-top: 10px; }
+
+/* ===================== 覆盤 ===================== */
+.tabbar a { position: relative; }
+.tbadge {
+  position: absolute; top: 5px; left: calc(50% + 6px);
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--accent); color: var(--accent-text);
+  font-size: .65rem; font-style: normal; font-weight: 700; line-height: 16px; text-align: center;
+}
+.tbadge[hidden] { display: none; }
+
+/* 指標卡 */
+.rvmet h3 { margin: 0 0 6px; }
+.rvmet .mrow { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 4.4em); gap: 6px; align-items: center; padding: 7px 0; border-top: 1px solid var(--border); }
+.rvmet .mrow.mhead { border-top: 0; padding: 0 0 4px; }
+.rvmet .h { text-align: right; font-size: .8rem; color: var(--muted); line-height: 1.25; }
+.rvmet .h small { display: block; font-size: .72rem; }
+.rvmet .t b { display: block; font-weight: 600; font-size: .92rem; }
+.rvmet .t small { display: block; color: var(--muted); font-size: .76rem; line-height: 1.35; }
+.rvmet .v { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rvrow .l { flex: 1; }
+.rvrow .r { flex: none; }
+
+/* 覆盤棋盤頁 */
+.rv-head { background: var(--bg); padding: 2px 0 4px; }
+.rv-pos { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-height: 28px; }
+.rv-pos b { font-weight: 600; }
+.rvfocus { margin: 4px 0 0; padding: 6px 10px; border: 1px solid var(--border); border-left: 4px solid var(--arrow-good); border-radius: 8px; background: var(--surface); }
+.rv-sec { margin: 8px 0; }
+.rv-sec .alts { margin: 4px 0; }
+.rvlink {
+  display: block; width: 100%; min-height: 44px; padding: 6px 12px; text-align: left; font: inherit;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; touch-action: manipulation;
+}
+.rvnav .btn { padding-left: 0; padding-right: 0; }
+.rvm { align-items: flex-start; }
+.rvm.on { border-color: var(--accent); }
+.rvm .l { flex: 1; }
+.rvtags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 2px 0; }
+.rvtag { font-size: .74rem; padding: 0 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); line-height: 1.6; }
+.rvtag.bad { border-color: var(--bad); color: var(--bad); }
+.rvtag.warn { border-color: var(--warn); color: var(--warn); }
+.rvtag.mine { border-color: var(--accent); }
+
+/* 圖表 */
+.rvchart { display: block; width: 100%; height: auto; margin: 4px 0 2px; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+.rvchart .gridl { stroke: var(--border); stroke-width: 1; }
+.rvchart .wpline { fill: none; stroke: var(--text); stroke-width: 1.6; stroke-linejoin: round; opacity: .85; }
+.rvchart .bar { fill: var(--muted); opacity: .6; }
+.rvchart .tgt { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.rvchart .m-bad { fill: var(--bad); stroke: var(--surface); stroke-width: 1.2; }
+.rvchart .m-warn { fill: var(--warn); stroke: var(--surface); stroke-width: 1.2; }
+.rvchart .m-ring { fill: none; stroke: var(--text); stroke-width: 1.6; }
+.rvchart .m-turn { stroke: var(--text); stroke-width: 1.6; opacity: .75; }
+.rvchart .m-mine { fill: var(--accent); }
+.rvchart .m-cur { stroke: var(--accent); stroke-width: 1.2; }
+.rvlegend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: .76rem; color: var(--text); }
+.rvlegend span { display: inline-flex; align-items: center; gap: 5px; }
+.rvlegend .lg { display: inline-block; flex: none; }
+.rvlegend .lg.dot { width: 9px; height: 9px; border-radius: 50%; }
+.rvlegend .lg.dot.bad { background: var(--bad); }
+.rvlegend .lg.dot.warn { background: var(--warn); }
+.rvlegend .lg.ring { width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid var(--text); }
+.rvlegend .lg.vline { width: 0; height: 12px; border-left: 1.6px solid var(--text); }
+.rvlegend .lg.tri { border: 4px solid transparent; border-top: 7px solid var(--accent); border-bottom: 0; }
+.rvlegend .lg.cur { width: 0; height: 12px; border-left: 1.2px solid var(--accent); }
+.rvlegend .lg.dash { width: 14px; height: 0; border-top: 1px dashed var(--muted); }
+
+@media (max-width: 899px) {
+  main.wide .rv-head { position: sticky; top: 0; z-index: 2; }
+  main.wide .rv-body { flex: none; }
+  main.wide .rv-sec { margin: 6px 0; }
+  main.wide .rvfocus { margin: 2px 0 0; padding: 4px 8px; }
+}
+@media (min-width: 900px) {
+  .rvsplit .split-board { position: sticky; top: 64px; align-self: start; }
+}
+.rv-head, .rv-body .rv-sec, main.wide #panel .actions { flex: none; }
+.rvchart { flex: none; }
+@media (max-width: 899px) {
+  /* 階段 B：棋盤縮小，圖表固定在「第 N 步」下方不被壓縮，下面的內容在區內捲動 */
+  body.fit main.wide .rvB .bwrap { width: min(100%, 300px); min-width: 0; }
+  main.wide .rvB .rvchart { min-height: 96px; }
+  main.wide .rvB .rvlegend { font-size: .72rem; }
+}

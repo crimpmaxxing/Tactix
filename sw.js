@@ -1,6 +1,6 @@
 // 改版時把 VERSION 加一，舊的程式快取會在 activate 時刪掉。
 // data/*.json 放在另一個快取（DATA_CACHE），改版時不清掉，避免離線時丟失資料。
-const VERSION = 'v2.6.4';
+const VERSION = 'v2.7.0';
 const STATIC_CACHE = 'chesscoach-static-' + VERSION;
 const DATA_CACHE = 'chesscoach-data';
 
@@ -26,7 +26,7 @@ const STATIC_ASSETS = [
 ];
 // 引擎檔（可能還沒放），抓不到不擋安裝
 const OPTIONAL_ASSETS = ['vendor/stockfish/stockfish-19-lite-single.js', 'vendor/stockfish/stockfish-19-lite-single.wasm'];
-const DATA_ASSETS = ['data/report.json', 'data/stats.json', 'data/puzzles.json', 'data/openings.json', 'data/learn.json'];
+const DATA_ASSETS = ['data/report.json', 'data/stats.json', 'data/puzzles.json', 'data/openings.json', 'data/learn.json', 'data/review.json'];
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {

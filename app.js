@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.6.4'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.7.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -63,6 +63,8 @@ const state = {
   puzzlesError: false,
   openings: null,   // openings.json 的 repertoires 陣列；讀不到是 null
   learnData: null,  // learn.json（學習模式的章節）；讀不到是 null
+  review: null,     // review.json（覆盤的對局與指標）；讀不到是 null
+  rvs: null,        // 覆盤頁目前的工作階段
   learn: null,      // 學習模式目前的工作階段
   tmos: [],         // 排程中的延遲動作
   drill: null,      // 「從頭練」目前的練習
@@ -196,6 +198,10 @@ async function loadData() {
     const lj = await getJson(DATA_DIR + 'learn.json');
     state.learnData = lj && Array.isArray(lj.levels) && lj.levels.length && lj.repertoires && typeof lj.repertoires === 'object' ? lj : null;
   } catch (e) { state.learnData = null; }
+  try {
+    const rj = await getJson('data/review.json');
+    state.review = rj && typeof rj === 'object' && Array.isArray(rj.games) ? rj : null;
+  } catch (e) { state.review = null; }
 }
 
 const SVG = (d, extra = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
@@ -206,6 +212,7 @@ const ICON = {
   prev: SVG('<path d="M15 6l-6 6 6 6"/>'),
   next: SVG('<path d="M9 6l6 6-6 6"/>'),
   play: SVG('<path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none"/>'),
+  last: SVG('<path d="M18 5v14"/><path d="M6 6l7 6-7 6"/>'),
 };
 
 // 「你執白／你執黑」標籤
@@ -260,7 +267,9 @@ function route() {
   const isLearn = page === 'learn';
   const learnBoard = isLearn && parts[1] !== undefined &&
     ((parts[2] === 'review' && parts[3] === undefined) || ['new', 'review', 'browse', 'from'].includes(parts[3]));
-  const boardPage = page === 'practice' || (isDrill && parts[2] !== undefined) || learnBoard;
+  const reviewBoard = page === 'review' && parts[1] !== undefined;
+  state.rvs = null;
+  const boardPage = page === 'practice' || (isDrill && parts[2] !== undefined) || learnBoard || reviewBoard;
   $view.classList.toggle('wide', boardPage);
   $view.classList.toggle('ovpage', page === 'overview' || page === '');
   document.body.classList.toggle('fit', boardPage);
@@ -279,6 +288,8 @@ function route() {
     else if (isDrill) pageDrillList();
     else if (page === 'openings' && parts[1] !== undefined) pageOpeningDetail(Number(parts[1]));
     else if (page === 'openings') pageOpenings();
+    else if (reviewBoard) pageReviewGame(decodeURIComponent(parts[1]));
+    else if (page === 'review') pageReview();
     else if (page === 'practice') pagePractice();
     else if (page === 'settings') pageSettings();
     else pageOverview();
@@ -1022,6 +1033,7 @@ function updatePanel(s, scroll = false) {
   if (s.explore) explorePanel(s);
   else if (s.kind === 'puzzle') puzzlePanel(s);
   else if (s.kind === 'learn') learnPanel(s);
+  else if (s.kind === 'review') reviewPanel(s);
   else drillPanel(s);
 }
 
@@ -2243,6 +2255,470 @@ function summaryPanel(s, el, backBtn) {
 
 /* ---------- 設定 ---------- */
 
+/* ---------- 覆盤 ---------- */
+
+const REVIEW_START = '2026-11-20';
+const HOW_ZH = {
+  resigned: '認輸', timeout: '超時', checkmated: '將死', repetition: '重複局面', abandoned: '對手離開',
+  agreed: '和棋協議', stalemate: '逼和', insufficient: '子力不足', timevsinsufficient: '超時，子力不足',
+  '50move': '五十步規則', kingofthehill: '王到山頂', threecheck: '三次將軍', bughousepartnerlose: '搭檔輸棋',
+};
+const RES_ZH = { win: '勝', draw: '和', loss: '負' };
+const NO_REVIEW_TEXT = (since) => `從 ${since} 起下的 rapid 對局會出現在這裡。每天中午自動更新後就會看到。`;
+
+function rvGames() { return Array.isArray(state.review?.games) ? state.review.games : []; }
+function rvDone(id) { return store.getReview(id).done; }
+
+// 分頁列圖示右上角的待覆盤數
+function updateReviewBadge() {
+  const el = document.getElementById('rv-badge');
+  if (!el) return;
+  const n = rvGames().filter(g => !rvDone(g.id)).length;
+  el.hidden = !n;
+  el.textContent = n > 99 ? '99+' : String(n);
+}
+
+function weekKey(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  const p = n => String(n).padStart(2, '0');
+  return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+}
+
+function rvResultText(g) {
+  const r = RES_ZH[g.result] || '';
+  const h = HOW_ZH[g.how] || '';
+  return r && h ? `${r}・${h}` : (r || h || '—');
+}
+
+function rvRowHtml(g) {
+  const name = zhOpening(g.opening) || String(g.opening || '').replace(/-/g, ' ') || '—';
+  const d = String(g.date || '').slice(5);
+  return `<a class="row rvrow" href="#/review/${encodeURIComponent(g.id)}">
+    <div class="l"><div>${esc(d)}　${g.color === 'black' ? '執黑' : '執白'}　${esc(rvResultText(g))}</div>
+      <div class="small muted">${esc(name)}　${esc(g.me?.rating ?? '—')} 對 ${esc(g.opp?.rating ?? '—')}</div></div>
+    <div class="r chev"></div></a>`;
+}
+
+function rvMetricsHtml(rv) {
+  const weeks = Array.isArray(rv.weeks) ? rv.weeks : [];
+  const now = new Date();
+  const thisW = weeks.find(w => w.week === weekKey(now)) || null;
+  const lastW = weeks.find(w => w.week === weekKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7))) || null;
+  const base = rv.baseline && rv.baseline.games ? rv.baseline : null;
+  const cols = [base, lastW, thisW];
+  const tgtSrc = thisW || lastW || base;
+  const tgt = tgtSrc && Number.isFinite(Number(tgtSrc.target)) ? Number(tgtSrc.target) : null;
+  const fast = Number(rv.fastSec) || 10;
+  const f1 = v => Number(v).toFixed(1);
+  const rows = [
+    ['每盤大漏著', '越少越好', r => r.blunders, f1],
+    [`${fast} 秒內下出的大漏著`, '每盤幾次；下得快又下錯才算', r => r.fast, f1],
+    ['局勢未定時平均每步用時', tgt != null ? `目標 ${f1(tgt)} 秒（基本時間÷40＋加秒）` : '目標：基本時間÷40＋加秒', r => r.sec, v => f1(v) + ' 秒'],
+    ['關鍵局面用時倍數', '只有一步好棋時，用時是平常的幾倍；越高越好', r => r.critRatio, v => Number(v).toFixed(2) + ' 倍'],
+  ];
+  const cell = (r, get, fmt) => {
+    const v = r ? get(r) : null;
+    return `<span class="v">${v == null || !Number.isFinite(Number(v)) ? '—' : esc(fmt(v))}</span>`;
+  };
+  const head = ['以前 rapid', '上週', '本週'].map((t, i) =>
+    `<span class="h">${t}${cols[i] ? `<small>${Number(cols[i].games) || 0} 盤</small>` : ''}</span>`).join('');
+  return `<div class="card rvmet"><h3>rapid 指標</h3>
+    <div class="mrow mhead"><span></span>${head}</div>
+    ${rows.map(([t, d, get, fmt]) => `<div class="mrow"><span class="t"><b>${esc(t)}</b><small>${esc(d)}</small></span>${cols.map(c => cell(c, get, fmt)).join('')}</div>`).join('')}
+    ${weeks.length ? '' : `<p class="small muted">從 ${esc(rv.since || REVIEW_START)} 起下的 rapid 會開始累計。</p>`}
+  </div>`;
+}
+
+function pageReview() {
+  setTitle('覆盤');
+  const rv = state.review;
+  const games = rvGames();
+  const pend = games.filter(g => !rvDone(g.id));
+  const done = games.filter(g => rvDone(g.id));
+  updateReviewBadge();
+  let html = rv ? rvMetricsHtml(rv) : '';
+  if (!games.length) {
+    html += `<div class="card empty"><p>${esc(NO_REVIEW_TEXT(rv?.since || REVIEW_START))}</p></div>`;
+  } else {
+    html += `<h2>待覆盤（${pend.length}）</h2>`;
+    html += pend.length ? pend.map(rvRowHtml).join('') : '<p class="muted">目前沒有待覆盤的對局。</p>';
+    if (done.length) {
+      html += `<details class="other"><summary><span>已覆盤</span><span class="muted">${done.length} 盤</span></summary>${done.map(rvRowHtml).join('')}</details>`;
+    }
+  }
+  $view.innerHTML = html;
+}
+
+// 半步 ply 的中文著法（不含顏色字樣），句子裡用
+function rvPlain(san, white) { return L.zhSan(san, white).replace(/^[白黑] /, ''); }
+function rvPlyWhite(p) { return p % 2 === 0; }
+function rvLabel(s, p) {
+  const m = s.mv[p];
+  return m ? `第 ${Math.floor(p / 2) + 1} 步 ${L.zhSan(m.san, m.color === 'w')}` : '';
+}
+function rvSec(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  return (n < 10 ? String(Math.round(n * 10) / 10) : String(Math.round(n))) + ' 秒';
+}
+function rvMine(s, p) { return rvPlyWhite(p) === (s.g.color !== 'black'); }
+const near = (a, list) => list.some(b => Math.abs(a - b) <= 1);
+
+function pageReviewGame(id) {
+  const g = rvGames().find(x => x.id === id) || null;
+  if (!g || !Array.isArray(g.sans)) {
+    setTitle('覆盤', '#/review');
+    $view.innerHTML = `<div class="card empty"><p>找不到這盤對局。</p><a class="btn" href="#/review">回清單</a></div>`;
+    return;
+  }
+  setTitle('覆盤', '#/review');
+  // 先把每個半步後的局面算好（FEN、最後一步），導覽時直接取用
+  const gm = new Chess();
+  const fens = [gm.fen()], lasts = [null], mv = [];
+  for (const san of g.sans) {
+    let m;
+    try { m = gm.move(san); } catch (e) { break; }
+    mv.push(m);
+    fens.push(gm.fen());
+    lasts.push({ from: m.from, to: m.to });
+  }
+  const rec = store.getReview(g.id);
+  const s = state.rvs = {
+    kind: 'review', g, rec, fens, lasts, mv, n: mv.length, k: 0, focus: null,
+    orientation: g.color === 'black' ? 'black' : 'white',
+    target: (Number(g.base) || 0) / 40 + (Number(g.inc) || 0),
+    phase: rec.done ? 'B' : 'A', notice: null,
+    game: new Chess(fens[0]), last: null, hl: [], arrows: null, status: '', q: null, busy: false, done: false,
+  };
+  const name = zhOpening(g.opening) || String(g.opening || '').replace(/-/g, ' ');
+  $view.innerHTML = `<div class="split rvsplit" id="split">
+    <div class="split-board" id="bcol">
+      <div class="turn">${sideChip(s.orientation)}<span>${esc(rvResultText(g))}${name ? '　' + esc(name) : ''}</span></div>
+      <div class="bwrap"><div id="board" class="board-wrap"></div></div>
+    </div>
+    <div class="split-info"><div id="panel"></div></div></div>`;
+  state.board = new Board(document.getElementById('board'));
+  state.evalFen = null;
+  updateBoard(s);
+  reviewPanel(s);
+}
+
+function rvGo(s, k, animate) {
+  k = Math.max(0, Math.min(s.n, k));
+  const fwd = animate && k === s.k + 1 && s.focus == null;
+  s.k = k;
+  s.focus = null;
+  s.arrows = null;
+  s.game = new Chess(s.fens[k]);
+  s.last = s.lasts[k];
+  updateBoard(s, { animate: fwd });
+  if (fwd && s.mv[k - 1]) audio.play(s.mv[k - 1].captured ? 'capture' : 'move');
+  reviewPanel(s);
+}
+
+// 顯示「這步之前」的局面，並畫出引擎最佳著
+function rvBefore(s, p) {
+  if (p < 0 || p >= s.n) return;
+  s.k = p;
+  s.focus = p;
+  s.game = new Chess(s.fens[p]);
+  s.last = s.lasts[p];
+  const u = s.g.best && s.g.best[p];
+  s.arrows = u && /^[a-h][1-8][a-h][1-8]/.test(u) ? [{ from: u.slice(0, 2), to: u.slice(2, 4), color: 'var(--arrow-good)' }] : null;
+  updateBoard(s);
+  reviewPanel(s);
+}
+
+function rvBestSan(s, p) {
+  const u = s.g.best && s.g.best[p];
+  if (!u) return null;
+  try {
+    const t = new Chess(s.fens[p]);
+    const bm = t.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || undefined });
+    const m = s.mv[p];
+    const same = !!m && bm.from === m.from && bm.to === m.to && (bm.promotion || '') === (m.promotion || '');
+    return { san: bm.san, white: bm.color === 'w', same };
+  } catch (e) { return null; }
+}
+
+function rvFocusText(s, p) {
+  const m = s.mv[p];
+  if (!m) return '';
+  const X = rvPlain(m.san, m.color === 'w');
+  const b = rvBestSan(s, p);
+  const Y = b ? rvPlain(b.san, b.white) : '';
+  if (!rvMine(s, p)) {
+    if (s.g.turning && s.g.turning.who === 'opp' && s.g.turning.ply === p) return `對手走了 ${X}，這是第一個大失誤。`;
+    return `對手走了 ${X}${b && !b.same ? `，引擎建議 ${Y}` : ''}。`;
+  }
+  if (!b) return `你走了 ${X}。`;
+  return b.same ? `你走了 ${X}，與引擎建議相同。` : `你走了 ${X}，引擎建議 ${Y}。`;
+}
+
+function rvToggleMark(s) {
+  if (s.k < 1) return;
+  const p = s.k - 1;
+  const marks = s.rec.marks.slice();
+  const i = marks.indexOf(p);
+  if (i >= 0) marks.splice(i, 1);
+  else {
+    if (marks.length >= 3) { s.notice = '最多標 3 處'; reviewPanel(s); return; }
+    marks.push(p);
+  }
+  store.setReviewMarks(s.g.id, marks);
+  s.rec = store.getReview(s.g.id);
+  reviewPanel(s);
+}
+
+function rvToEngine(s) {
+  if (!s.rec.done) {
+    store.setReviewDone(s.g.id, Date.now());
+    s.rec = store.getReview(s.g.id);
+    updateReviewBadge();
+  }
+  s.phase = 'B';
+  s.arrows = null;
+  s.focus = null;
+  s.game = new Chess(s.fens[s.k]);
+  updateBoard(s);
+  reviewPanel(s);
+}
+
+function rvNavHtml(s) {
+  const first = s.k <= 0, last = s.k >= s.n;
+  return `<div class="btns rvnav">
+    <button class="btn icon grow" data-nav="first" aria-label="第一步"${first ? ' disabled' : ''}>${ICON.first}</button>
+    <button class="btn icon grow" data-nav="prev" aria-label="上一步"${first ? ' disabled' : ''}>${ICON.prev}</button>
+    <button class="btn icon grow" data-nav="next" aria-label="下一步"${last ? ' disabled' : ''}>${ICON.next}</button>
+    <button class="btn icon grow" data-nav="last" aria-label="最後一步"${last ? ' disabled' : ''}>${ICON.last}</button></div>`;
+}
+
+function rvHeadHtml(s, chartSvg = '') {
+  let pos;
+  if (s.focus != null) {
+    pos = `<b>${esc(rvLabel(s, s.focus))}</b><span class="muted">走之前的局面</span>`;
+  } else if (s.k === 0) {
+    pos = '<b>起始局面</b>';
+  } else {
+    const p = s.k - 1;
+    const sp = rvMine(s, p) ? s.g.spent && s.g.spent[p] : null;
+    pos = `<b>${esc(rvLabel(s, p))}</b>${sp != null && Number.isFinite(Number(sp)) ? `<span class="muted">用了 ${esc(rvSec(sp))}</span>` : ''}`;
+  }
+  const note = s.notice ? `<div class="notice">${esc(s.notice)}</div>` : '';
+  s.notice = null;
+  const foc = s.phase === 'B' && s.focus != null ? `<div class="rvfocus">${esc(rvFocusText(s, s.focus))}</div>` : '';
+  return `<div class="rv-head"><div class="rv-pos">${pos}</div>${note}${foc}${chartSvg}</div>`;
+}
+
+function rvOpenHtml(s) {
+  const oc = s.g.openingCheck;
+  if (!oc) return '';
+  const N = Math.floor((oc.ply || 0) / 2) + 1;
+  const white = rvPlyWhite(oc.ply || 0);
+  let text, k;
+  if (oc.kind === 'me') {
+    let Y = oc.expected;
+    const st = s.fens[oc.ply] ? L.step(s.fens[oc.ply], oc.expected) : null;
+    if (st) Y = rvPlain(st.san, st.white);
+    text = `第 ${N} 步你走了 ${rvPlain(oc.played, white)}，套路是 ${Y}${oc.ok ? '（引擎也認可）' : ''}`;
+    k = oc.ply + 1;
+  } else if (oc.kind === 'opp') {
+    text = `第 ${N} 步對手走了 ${rvPlain(oc.played, white)}，套路沒有收這步`;
+    k = oc.ply + 1;
+  } else {
+    text = `照套路走到第 ${Math.max(1, Math.ceil((oc.ply || 0) / 2))} 步`;
+    k = oc.ply;
+  }
+  return `<div class="rv-sec"><div class="small muted">開局檢查${oc.name ? '：' + esc(oc.name) : ''}</div>
+    <button class="rvlink" data-k="${Math.min(k, s.n)}">${esc(text)}</button></div>`;
+}
+
+// 關鍵步 = 大漏著 ∪ 只有一步好棋 ∪ 轉折點
+function rvKeyPlies(s) {
+  const g = s.g;
+  const set = new Set([...(g.blunders || []), ...(g.critical || [])]);
+  if (g.turning && Number.isFinite(g.turning.ply)) set.add(g.turning.ply);
+  return [...set].filter(p => p >= 0 && p < s.n).sort((a, b) => a - b);
+}
+
+function rvCompareHtml(s) {
+  const keys = rvKeyPlies(s);
+  const marks = s.rec.marks;
+  const hit = marks.filter(m => near(m, keys)).length;
+  const bl = new Set(s.g.blunders || []), tp = s.g.turning ? s.g.turning.ply : null;
+  // 沒標到的只列大漏著與轉折點（只有一步好棋的在下方關鍵時刻列表），最多 6 個
+  const missedAll = keys.filter(p => !near(p, marks) && (bl.has(p) || p === tp));
+  const missed = missedAll.slice(0, 6);
+  const head = marks.length ? `你標的 ${marks.length} 處中，有 ${hit} 處是真正的關鍵。` : '這盤你沒有標記。';
+  let tail = '';
+  if (!keys.length) tail = '<div class="small muted">這盤沒有找到關鍵步。</div>';
+  else if (missed.length) {
+    const more = missedAll.length - missed.length;
+    tail = `<div class="small muted">沒標到的大漏著與轉折點</div><div class="alts">${missed.map(p => `<button class="chip" data-before="${p}">${esc(rvLabel(s, p))}</button>`).join('')}${more > 0 ? `<span>等 ${more} 處</span>` : ''}</div>`;
+  } else if (keys.every(p => near(p, marks))) tail = '<div class="small muted">關鍵步都標到了。</div>';
+  return `<div class="rv-sec"><div class="small muted">與你的標記比對</div><div>${esc(head)}</div>${tail}
+    <button class="chip" id="rv-to-a">改標記</button></div>`;
+}
+
+// 回傳 {svg, legend}；H 是圖高（手機版較矮），上下區依比例縮放
+function rvChartHtml(s, W, H = 140) {
+  const g = s.g, n = s.n, sc = H / 140;
+  if (!Array.isArray(g.wp) || n < 1) return { svg: '', legend: '' };
+  const pl = 6, pr = 6;
+  const xs = k => pl + (k / n) * (W - pl - pr);
+  const y0 = 12 * sc, y1 = 76 * sc;  // 上區：勝率 100 → 0
+  const b0 = 86 * sc, b1 = 134 * sc; // 下區：長條底線 b1
+  const mine = v => (g.color === 'black' ? 100 - v : v);
+  const yw = v => y1 - (Math.max(0, Math.min(100, v)) / 100) * (y1 - y0);
+  const wpAt = k => (Number.isFinite(Number(g.wp[k])) ? yw(mine(Number(g.wp[k]))) : null);
+  const f = v => v.toFixed(1);
+  const pts = [];
+  for (let k = 0; k <= n; k++) { const y = wpAt(k); if (y != null) pts.push(`${f(xs(k))},${f(y)}`); }
+  const spent = Array.isArray(g.spent) ? g.spent : [];
+  const maxSp = Math.max(0, ...spent.slice(0, n).filter(v => Number.isFinite(Number(v))).map(Number));
+  const tgt = s.target > 0 ? s.target : 15;
+  const cap = Math.max(3 * tgt, maxSp) || 1;
+  const bw = Math.max(1.5, ((W - pl - pr) / n) * 1.3);
+  let bars = '';
+  for (let i = 0; i < n; i++) {
+    const v = Number(spent[i]);
+    if (spent[i] == null || !Number.isFinite(v) || v <= 0) continue;
+    const h = Math.max(1, (v / cap) * (b1 - b0));
+    bars += `<rect class="bar" x="${f(xs(i + 0.5) - bw / 2)}" y="${f(b1 - h)}" width="${f(bw)}" height="${f(h)}"/>`;
+  }
+  const ty = b1 - (tgt / cap) * (b1 - b0);
+  const dot = (p, cls, r) => {
+    const y = wpAt(p + 1);
+    return y == null || p < 0 || p >= n ? '' : `<circle class="${cls}" cx="${f(xs(p + 1))}" cy="${f(y)}" r="${r}"/>`;
+  };
+  let marks = '';
+  for (const p of g.mistakes || []) marks += dot(p, 'm-warn', 3.5);
+  for (const p of g.blunders || []) marks += dot(p, 'm-bad', 4);
+  for (const p of g.critical || []) {
+    const y = wpAt(p);
+    if (y != null && p >= 0 && p < n) marks += `<circle class="m-ring" cx="${f(xs(p))}" cy="${f(y)}" r="5.5"/>`;
+  }
+  let turn = '';
+  if (g.turning && g.turning.ply >= 0 && g.turning.ply < n) {
+    const x = f(xs(g.turning.ply + 1));
+    turn = `<line class="m-turn" x1="${x}" x2="${x}" y1="${f(y0 - 4)}" y2="${f(y1 + 2)}"/>`;
+  }
+  let mk = '';
+  for (const p of s.rec.marks) {
+    if (p < 0 || p >= n) continue;
+    const x = xs(p + 1);
+    mk += `<path class="m-mine" d="M${f(x - 4)},1 L${f(x + 4)},1 L${f(x)},8 Z"/>`;
+  }
+  const cx = f(xs(s.k));
+  const svg = `<svg class="rvchart" id="rv-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="勝率與每步用時圖表，點一下跳到該步">
+    <line class="gridl" x1="${pl}" x2="${W - pr}" y1="${f(yw(50))}" y2="${f(yw(50))}"/>
+    <line class="gridl" x1="${pl}" x2="${W - pr}" y1="${f(b1)}" y2="${f(b1)}"/>
+    ${bars}
+    <line class="tgt" x1="${pl}" x2="${W - pr}" y1="${f(ty)}" y2="${f(ty)}"/>
+    <polyline class="wpline" points="${pts.join(' ')}"/>
+    ${turn}${marks}${mk}
+    <line class="m-cur" x1="${cx}" x2="${cx}" y1="0" y2="${f(b1)}"/>
+  </svg>`;
+  const legend = `<div class="rvlegend">
+    <span><i class="lg dot bad"></i>大漏著</span><span><i class="lg dot warn"></i>失誤</span><span><i class="lg ring"></i>關鍵局面</span>
+    <span><i class="lg vline"></i>轉折點</span><span><i class="lg tri"></i>我的標記</span><span><i class="lg cur"></i>目前位置</span>
+    <span><i class="lg dash"></i>目標用時 ${esc(rvSec(tgt))}</span></div>`;
+  return { svg, legend };
+}
+
+let puzzleById = null;
+function puzzleOf(id) {
+  if (!puzzleById || puzzleById.size !== state.puzzles.length) puzzleById = new Map(state.puzzles.map(p => [p.id, p]));
+  return puzzleById.get(id) || null;
+}
+
+function rvMomentsHtml(s) {
+  const g = s.g;
+  const bl = new Set(g.blunders || []), ms = new Set(g.mistakes || []), cr = new Set(g.critical || []);
+  const turn = g.turning ? g.turning.ply : null;
+  const keys = rvKeyPlies(s);
+  const marks = s.rec.marks;
+  const rows = new Set([...keys, ...[...ms].filter(p => p >= 0 && p < s.n)]);
+  for (const m of marks) if (!near(m, [...rows]) && m >= 0 && m < s.n) rows.add(m);
+  const list = [...rows].sort((a, b) => a - b);
+  if (!list.length) return '<div class="rv-sec"><div class="small muted">關鍵時刻</div><div class="muted">這盤沒有標出的時刻。</div></div>';
+  const items = list.map(p => {
+    const tags = [];
+    if (bl.has(p)) tags.push('<span class="rvtag bad">大漏著</span>');
+    if (ms.has(p)) tags.push('<span class="rvtag warn">失誤</span>');
+    if (cr.has(p)) tags.push('<span class="rvtag">只有一步好棋</span>');
+    if (turn === p) tags.push('<span class="rvtag">轉折點</span>');
+    if (near(p, marks)) tags.push('<span class="rvtag mine">你有標</span>');
+    const sp = rvMine(s, p) && g.spent ? g.spent[p] : null;
+    const pz = Array.isArray(g.puzzles) ? puzzleOf(`${g.id}-${p}`) : null;
+    return `<button class="row brow rvm${s.focus === p ? ' on' : ''}" data-before="${p}"><div class="l">
+      <div>${esc(rvLabel(s, p))}</div>
+      <div class="rvtags">${tags.join('')}${sp != null && Number.isFinite(Number(sp)) ? `<span class="small muted">用 ${esc(rvSec(sp))}</span>` : ''}</div>
+      ${pz && pz.explanation ? `<div class="small muted">${esc(pz.explanation)}</div>` : ''}</div></button>`;
+  });
+  return `<div class="rv-sec"><div class="small muted">關鍵時刻</div>${items.join('')}</div>`;
+}
+
+function reviewPanel(s) {
+  const el = document.getElementById('panel');
+  if (!el) return;
+  const top = el.scrollTop;   // 重畫後保留捲動位置，不自動捲動
+  const g = s.g;
+  let body, foot, chart = { svg: '' };
+  if (s.phase === 'A') {
+    const marks = s.rec.marks;
+    const on = s.k >= 1 && marks.includes(s.k - 1);
+    body = `<div class="rv-sec"><div class="small muted">先自己看這盤。把你覺得關鍵的一步標起來，最多 3 處。</div>
+      <div class="small muted" style="margin-top:6px">已標 ${marks.length} / 3</div>
+      <div class="alts">${marks.length ? marks.map(p => `<button class="chip" data-k="${p + 1}">${esc(rvLabel(s, p))}</button>`).join('') : '<span>尚未標記</span>'}</div></div>`;
+    foot = `${rvNavHtml(s)}<div class="btns">
+      <button class="btn grow" id="rv-mark"${s.k < 1 ? ' disabled' : ''}>${on ? '取消標記' : '標為關鍵'}</button>
+      <button class="btn primary grow" id="rv-eng">${s.rec.done ? '回引擎結果' : '看引擎結果'}</button></div>`;
+  } else {
+    const W = Math.max(240, Math.round(el.clientWidth || 320));
+    const pz = (Array.isArray(g.puzzles) ? g.puzzles : []).map(puzzleOf).filter(Boolean);
+    const H = window.matchMedia && window.matchMedia('(max-width: 899px)').matches ? 104 : 140;
+    chart = rvChartHtml(s, W, H);
+    body = `${chart.legend ? `<div class="rv-sec"><div class="small muted">上：勝率（你這一方）　下：每步用時</div>${chart.legend}</div>` : ''}${rvOpenHtml(s)}${rvCompareHtml(s)}
+      ${rvMomentsHtml(s)}
+      ${g.url ? `<p class="small"><a href="${esc(g.url)}" target="_blank" rel="noopener">在 chess.com 開啟原局</a></p>` : ''}`;
+    foot = `${rvNavHtml(s)}<div class="btns">
+      ${pz.length ? `<button class="btn primary grow" id="rv-retry">重試這盤的漏著（${pz.length} 題）</button>` : ''}
+      <a class="btn" href="#/review">回清單</a></div>`;
+  }
+  const split = document.getElementById('split');
+  if (split) split.classList.toggle('rvB', s.phase === 'B');   // 手機階段 B 棋盤縮小，讓出圖表空間
+  el.innerHTML = `${rvHeadHtml(s, chart.svg)}<div class="rv-body">${body}</div><div class="actions">${foot}</div>`;
+  el.scrollTop = top;
+  el.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
+    const t = b.dataset.nav;
+    const base = s.focus != null ? s.focus : s.k;
+    rvGo(s, t === 'first' ? 0 : t === 'last' ? s.n : t === 'prev' ? base - 1 : base + 1, t === 'next');
+  }));
+  el.querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => rvGo(s, Number(b.dataset.k), false)));
+  el.querySelectorAll('[data-before]').forEach(b => b.addEventListener('click', () => rvBefore(s, Number(b.dataset.before))));
+  const q = id => document.getElementById(id);
+  if (q('rv-mark')) q('rv-mark').addEventListener('click', () => rvToggleMark(s));
+  if (q('rv-eng')) q('rv-eng').addEventListener('click', () => rvToEngine(s));
+  if (q('rv-to-a')) q('rv-to-a').addEventListener('click', () => { s.phase = 'A'; s.arrows = null; s.focus = null; s.game = new Chess(s.fens[s.k]); updateBoard(s); reviewPanel(s); });
+  if (q('rv-retry')) q('rv-retry').addEventListener('click', () => {
+    const list = (Array.isArray(g.puzzles) ? g.puzzles : []).map(puzzleOf).filter(Boolean);
+    if (!list.length) return;
+    state.forced = list;
+    state.cur = null;
+    location.hash = '#/practice';
+  });
+  const ch = q('rv-chart');
+  if (ch) ch.addEventListener('click', ev => {
+    const r = ch.getBoundingClientRect();
+    if (!r.width) return;
+    const vb = ch.viewBox.baseVal;
+    const x = (ev.clientX - r.left) * (vb.width / r.width);
+    const k = Math.round(((x - 6) / (vb.width - 12)) * s.n);
+    rvGo(s, k, false);
+  });
+}
+
 function download(name, text) {
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2352,8 +2828,10 @@ function pageSettings() {
       const obj = JSON.parse(await f.text());
       if (!window.confirm('要用這個檔案取代目前的練習進度嗎？')) { ev.target.value = ''; return; }
       const n = store.replaceAll(obj);
-      msg(`已匯入，共 ${n} 題的進度。`);
+      const rn = obj.review && typeof obj.review === 'object' && obj.review.games ? Object.keys(obj.review.games).length : 0;
+      msg(`已匯入，共 ${n} 題的進度${rn ? `、${rn} 盤的覆盤紀錄` : ''}。`);
       state.cur = null;
+      updateReviewBadge();
     } catch (e) { msg('匯入失敗：檔案格式不對。'); }
     ev.target.value = '';
   });
@@ -2392,6 +2870,7 @@ async function main() {
   // iPhone 要在使用者手勢裡啟動音效
   for (const ev of ['pointerup', 'touchend', 'click']) document.addEventListener(ev, audio.unlock, { passive: true });
   await loadData();
+  updateReviewBadge();
   window.addEventListener('hashchange', route);
   route();
   if ('serviceWorker' in navigator && !MOCK) {
