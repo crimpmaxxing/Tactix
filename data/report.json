@@ -1,11 +1,11 @@
 {
-  "generated": "2026-11-19T21:35:28+08:00",
+  "generated": "2026-11-20T12:02:58+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1402,
-    "blitz": 663,
+    "games": 1403,
+    "blitz": 664,
     "rapid": 739,
-    "win": 719,
+    "win": 720,
     "draw": 84,
     "loss": 599
   },
@@ -7019,6 +7019,11 @@
       "date": "2026-11-19",
       "time_class": "blitz",
       "rating": 899
+    },
+    {
+      "date": "2026-11-19",
+      "time_class": "blitz",
+      "rating": 907
     }
   ],
   "blunders": {
@@ -7028,12 +7033,12 @@
       "missed_threat": 413,
       "missed_tactic": 902,
       "endgame": 203,
-      "other": 967
+      "other": 970
     },
     "with_time_pressure": 186,
     "by_phase": {
-      "opening": 668,
-      "middlegame": 2292,
+      "opening": 669,
+      "middlegame": 2294,
       "endgame": 438
     },
     "mistakes": 2846
@@ -7092,13 +7097,13 @@
       "family": "Vienna Game",
       "name": "Vienna Game Falkbeer Vienna Gambit",
       "color": "white",
-      "games": 92,
-      "win": 50,
+      "games": 93,
+      "win": 51,
       "draw": 4,
       "loss": 38,
-      "score": 0.565,
-      "avg_wp_after_move10": 69.8,
-      "first_blunder_move_avg": 11.8,
+      "score": 0.57,
+      "avg_wp_after_move10": 69.9,
+      "first_blunder_move_avg": 11.7,
       "common_mistakes": [
         {
           "move_no": 5,
