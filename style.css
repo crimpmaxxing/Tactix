@@ -620,3 +620,10 @@ main.ovpage { max-width: 1080px; }
   main.wide .rvB .rvchart { min-height: 96px; }
   main.wide .rvB .rvlegend { font-size: .72rem; }
 }
+
+/* 覆盤評語 */
+.rvsum { font-weight: 600; margin: 2px 0 2px; }
+.rvc { margin: 4px 0; line-height: 1.5; border-left-width: 4px; }
+.rvc.good { border-left-color: var(--accent); }
+.rvc.bad { border-left-color: var(--bad); }
+div.rvc { cursor: default; }

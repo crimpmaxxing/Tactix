@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.7.1'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.8.0'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -2533,6 +2533,25 @@ function rvOpenHtml(s) {
     <button class="rvlink" data-k="${Math.min(k, s.n)}">${esc(text)}</button></div>`;
 }
 
+// 評語：總評、做得好、待改進、各階段（build_review.py 的 comments）
+function rvCommentHtml(s) {
+  const c = s.g.comments;
+  if (!c || typeof c !== 'object') return '';
+  const item = (x, cls) => (Number.isFinite(x.ply) && x.ply >= 0 && x.ply < s.n)
+    ? `<button class="rvlink rvc ${cls}" data-before="${x.ply}">${esc(x.text)}</button>`
+    : `<div class="rvlink rvc ${cls}">${esc(x.text)}</div>`;
+  const list = (title, arr, cls) => Array.isArray(arr) && arr.length
+    ? `<div class="small muted" style="margin-top:8px">${title}</div>${arr.map(x => item(x, cls)).join('')}` : '';
+  const G = { good: '好', ok: '普通', bad: '差' };
+  const ph = c.phases || {};
+  const phase = [['opening', '開局'], ['middle', '中局'], ['end', '殘局']]
+    .map(([k, n]) => `${n} ${G[ph[k]] || '—'}`).join('｜');
+  return `<div class="rv-sec rvcm"><div class="small muted">評語</div>
+    ${c.summary ? `<div class="rvsum">${esc(c.summary)}</div>` : ''}
+    ${list('做得好', c.good, 'good')}${list('待改進', c.bad, 'bad')}
+    <div class="small" style="margin-top:8px"><span class="muted">各階段：</span>${esc(phase)}</div></div>`;
+}
+
 // 關鍵步 = 大漏著 ∪ 只有一步好棋 ∪ 轉折點
 function rvKeyPlies(s) {
   const g = s.g;
@@ -2689,7 +2708,8 @@ function reviewPanel(s) {
   const split = document.getElementById('split');
   if (split) split.classList.toggle('rvB', s.phase === 'B');   // 手機階段 B 棋盤縮小，讓出圖表空間
   // 圖表放在可捲動的內容區最上面，往上滑時跟說明一起滑走（使用者要求，不固定在標頭）
-  el.innerHTML = `${rvHeadHtml(s)}<div class="rv-body">${chart.svg || ''}${body}</div><div class="actions">${foot}</div>`;
+  const cmt = s.phase === 'B' ? rvCommentHtml(s) : '';
+  el.innerHTML = `${rvHeadHtml(s)}<div class="rv-body">${cmt}${chart.svg || ''}${body}</div><div class="actions">${foot}</div>`;
   el.scrollTop = top;
   el.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
     const t = b.dataset.nav;
