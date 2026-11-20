@@ -1,13 +1,13 @@
 {
-  "generated": "2026-11-20T12:02:58+08:00",
+  "generated": "2026-11-20T15:06:51+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1403,
+    "games": 1404,
     "blitz": 664,
-    "rapid": 739,
+    "rapid": 740,
     "win": 720,
     "draw": 84,
-    "loss": 599
+    "loss": 600
   },
   "rating_history": [
     {
@@ -7024,12 +7024,17 @@
       "date": "2026-11-19",
       "time_class": "blitz",
       "rating": 907
+    },
+    {
+      "date": "2026-11-20",
+      "time_class": "rapid",
+      "rating": 1046
     }
   ],
   "blunders": {
     "per_game": 2.42,
     "by_category": {
-      "hanging": 913,
+      "hanging": 914,
       "missed_threat": 413,
       "missed_tactic": 902,
       "endgame": 203,
@@ -7037,11 +7042,11 @@
     },
     "with_time_pressure": 186,
     "by_phase": {
-      "opening": 669,
+      "opening": 670,
       "middlegame": 2294,
       "endgame": 438
     },
-    "mistakes": 2846
+    "mistakes": 2847
   },
   "openings": [
     {
@@ -8430,6 +8435,19 @@
       "common_mistakes": []
     },
     {
+      "family": "English Opening",
+      "name": "English Opening Reversed Sicilian Closed",
+      "color": "black",
+      "games": 2,
+      "win": 0,
+      "draw": 0,
+      "loss": 2,
+      "score": 0.0,
+      "avg_wp_after_move10": 21.3,
+      "first_blunder_move_avg": 9.0,
+      "common_mistakes": []
+    },
+    {
       "family": "Four Knights Game",
       "name": "Four Knights Game Italian Variation",
       "color": "white",
@@ -9236,19 +9254,6 @@
       "score": 0.0,
       "avg_wp_after_move10": 14.0,
       "first_blunder_move_avg": 9.0,
-      "common_mistakes": []
-    },
-    {
-      "family": "English Opening",
-      "name": "English Opening Reversed Sicilian Closed",
-      "color": "black",
-      "games": 1,
-      "win": 0,
-      "draw": 0,
-      "loss": 1,
-      "score": 0.0,
-      "avg_wp_after_move10": 36.0,
-      "first_blunder_move_avg": 11.0,
       "common_mistakes": []
     },
     {
