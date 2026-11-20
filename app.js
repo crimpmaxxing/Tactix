@@ -7,7 +7,7 @@ import * as engine from './engine.js';
 import * as L from './learn.js';
 import { renderOverview, cleanupOverview } from './overview.js';
 
-export const APP_VERSION = '2.7.0'; // 與 sw.js 的 VERSION 一起改
+export const APP_VERSION = '2.7.1'; // 與 sw.js 的 VERSION 一起改
 
 // ?mock=1：改讀 data/mock/ 的測試資料，進度另存，不動真正的進度。
 const MOCK = (() => { try { return new URLSearchParams(location.search).get('mock') === '1'; } catch (e) { return false; } })();
@@ -2688,7 +2688,8 @@ function reviewPanel(s) {
   }
   const split = document.getElementById('split');
   if (split) split.classList.toggle('rvB', s.phase === 'B');   // 手機階段 B 棋盤縮小，讓出圖表空間
-  el.innerHTML = `${rvHeadHtml(s, chart.svg)}<div class="rv-body">${body}</div><div class="actions">${foot}</div>`;
+  // 圖表放在可捲動的內容區最上面，往上滑時跟說明一起滑走（使用者要求，不固定在標頭）
+  el.innerHTML = `${rvHeadHtml(s)}<div class="rv-body">${chart.svg || ''}${body}</div><div class="actions">${foot}</div>`;
   el.scrollTop = top;
   el.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
     const t = b.dataset.nav;
