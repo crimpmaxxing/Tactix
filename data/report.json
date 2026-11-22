@@ -1,13 +1,13 @@
 {
-  "generated": "2026-11-22T12:54:11+08:00",
+  "generated": "2026-11-22T22:03:22+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1405,
-    "blitz": 664,
+    "games": 1408,
+    "blitz": 667,
     "rapid": 741,
-    "win": 721,
+    "win": 723,
     "draw": 84,
-    "loss": 600
+    "loss": 601
   },
   "rating_history": [
     {
@@ -7034,6 +7034,21 @@
       "date": "2026-11-21",
       "time_class": "rapid",
       "rating": 1059
+    },
+    {
+      "date": "2026-11-22",
+      "time_class": "blitz",
+      "rating": 899
+    },
+    {
+      "date": "2026-11-22",
+      "time_class": "blitz",
+      "rating": 907
+    },
+    {
+      "date": "2026-11-22",
+      "time_class": "blitz",
+      "rating": 915
     }
   ],
   "blunders": {
@@ -7041,29 +7056,29 @@
     "by_category": {
       "hanging": 914,
       "missed_threat": 413,
-      "missed_tactic": 902,
+      "missed_tactic": 904,
       "endgame": 203,
-      "other": 972
+      "other": 974
     },
-    "with_time_pressure": 187,
+    "with_time_pressure": 188,
     "by_phase": {
       "opening": 670,
-      "middlegame": 2296,
+      "middlegame": 2300,
       "endgame": 438
     },
-    "mistakes": 2850
+    "mistakes": 2854
   },
   "openings": [
     {
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense",
       "color": "black",
-      "games": 256,
-      "win": 129,
+      "games": 257,
+      "win": 130,
       "draw": 20,
       "loss": 107,
-      "score": 0.543,
-      "avg_wp_after_move10": 48.1,
+      "score": 0.545,
+      "avg_wp_after_move10": 48.0,
       "first_blunder_move_avg": 12.9,
       "common_mistakes": [
         {
@@ -7281,13 +7296,13 @@
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense Exchange Variation",
       "color": "black",
-      "games": 54,
+      "games": 55,
       "win": 30,
       "draw": 2,
-      "loss": 22,
-      "score": 0.574,
+      "loss": 23,
+      "score": 0.564,
       "avg_wp_after_move10": 51.9,
-      "first_blunder_move_avg": 15.9,
+      "first_blunder_move_avg": 16.0,
       "common_mistakes": [
         {
           "move_no": 8,
@@ -10130,6 +10145,19 @@
       "score": 0.0,
       "avg_wp_after_move10": 49.4,
       "first_blunder_move_avg": 28.0,
+      "common_mistakes": []
+    },
+    {
+      "family": "Vienna Game",
+      "name": "Vienna Game Max Lange Vienna Gambit",
+      "color": "white",
+      "games": 1,
+      "win": 1,
+      "draw": 0,
+      "loss": 0,
+      "score": 1.0,
+      "avg_wp_after_move10": 50.6,
+      "first_blunder_move_avg": null,
       "common_mistakes": []
     }
   ]
