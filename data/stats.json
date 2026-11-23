@@ -1,29 +1,29 @@
 {
- "generated": "2026-11-22T22:03:25+08:00",
- "games": 1408,
- "games_with_eval": 1408,
+ "generated": "2026-11-23T22:04:12+08:00",
+ "games": 1415,
+ "games_with_eval": 1415,
  "totals": {
-  "win": 723,
-  "draw": 84,
-  "loss": 601
+  "win": 726,
+  "draw": 86,
+  "loss": 603
  },
  "by_color": {
   "white": {
-   "win": 368,
-   "draw": 44,
-   "loss": 291
+   "win": 370,
+   "draw": 45,
+   "loss": 292
   },
   "black": {
-   "win": 355,
-   "draw": 40,
-   "loss": 310
+   "win": 356,
+   "draw": 41,
+   "loss": 311
   }
  },
  "by_time_class": {
   "blitz": {
-   "win": 335,
-   "draw": 27,
-   "loss": 305
+   "win": 338,
+   "draw": 29,
+   "loss": 307
   },
   "rapid": {
    "win": 388,
@@ -32,14 +32,14 @@
   }
  },
  "win_how": {
-  "認輸": 325,
-  "將死": 251,
+  "認輸": 327,
+  "將死": 252,
   "超時": 75,
   "棄局": 72
  },
  "loss_how": {
-  "將死": 456,
-  "超時": 121,
+  "將死": 457,
+  "超時": 122,
   "認輸": 19,
   "棄局": 5
  },
@@ -48,19 +48,19 @@
   "三次重複": 29,
   "子力不足": 10,
   "協議和棋": 7,
-  "超時（子力不足）": 4
+  "超時（子力不足）": 6
  },
  "big_advantage": {
-  "games": 1101,
-  "win": 678,
-  "draw": 67,
-  "loss": 356
+  "games": 1107,
+  "win": 681,
+  "draw": 69,
+  "loss": 357
  },
  "big_disadvantage": {
-  "games": 987,
+  "games": 990,
   "win": 326,
-  "draw": 72,
-  "loss": 589
+  "draw": 73,
+  "loss": 591
  },
  "accuracy": {
   "mean": 86.5,
@@ -119,7 +119,7 @@
    },
    {
     "month": "2026-11",
-    "games": 104,
+    "games": 111,
     "mean": 88.0
    }
   ]
@@ -127,33 +127,33 @@
  "blunder_rate_by_move": [
   {
    "bucket": "1–10",
-   "moves": 13892,
-   "blunders": 670,
-   "per100": 4.82
+   "moves": 13962,
+   "blunders": 671,
+   "per100": 4.81
   },
   {
    "bucket": "11–20",
-   "moves": 12836,
-   "blunders": 1330,
+   "moves": 12900,
+   "blunders": 1336,
    "per100": 10.36
   },
   {
    "bucket": "21–30",
-   "moves": 9918,
-   "blunders": 828,
-   "per100": 8.35
+   "moves": 9978,
+   "blunders": 831,
+   "per100": 8.33
   },
   {
    "bucket": "31–40",
-   "moves": 6199,
-   "blunders": 346,
-   "per100": 5.58
+   "moves": 6243,
+   "blunders": 347,
+   "per100": 5.56
   },
   {
    "bucket": "41+",
-   "moves": 6228,
-   "blunders": 238,
-   "per100": 3.82
+   "moves": 6276,
+   "blunders": 244,
+   "per100": 3.89
   }
  ],
  "by_hour": {
@@ -170,8 +170,8 @@
    "score": 0.539
   },
   "18–24": {
-   "games": 752,
-   "score": 0.541
+   "games": 759,
+   "score": 0.542
   }
  },
  "by_rating_diff": {
@@ -184,7 +184,7 @@
    "score": 0.891
   },
   "±50": {
-   "games": 1330,
+   "games": 1337,
    "score": 0.543
   },
   "+50~+200": {
@@ -198,20 +198,20 @@
  },
  "after_result": {
   "win": {
-   "games": 532,
+   "games": 534,
    "score": 0.557
   },
   "draw": {
-   "games": 68,
-   "score": 0.574
+   "games": 70,
+   "score": 0.579
   },
   "loss": {
-   "games": 530,
-   "score": 0.548
+   "games": 532,
+   "score": 0.547
   }
  },
  "low_clock": {
-  "games": 293,
+  "games": 297,
   "score": 0.256
  },
  "streak": {
@@ -226,9 +226,9 @@
    "change_30d": 26
   },
   "blitz": {
-   "now": 915,
+   "now": 923,
    "peak": 924,
-   "change_30d": 92
+   "change_30d": 84
   }
  },
  "params": {

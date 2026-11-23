@@ -1,13 +1,13 @@
 {
-  "generated": "2026-11-22T22:03:22+08:00",
+  "generated": "2026-11-23T22:04:09+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1408,
-    "blitz": 667,
+    "games": 1415,
+    "blitz": 674,
     "rapid": 741,
-    "win": 723,
-    "draw": 84,
-    "loss": 601
+    "win": 726,
+    "draw": 86,
+    "loss": 603
   },
   "rating_history": [
     {
@@ -7049,24 +7049,59 @@
       "date": "2026-11-22",
       "time_class": "blitz",
       "rating": 915
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 923
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 915
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 907
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 907
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 907
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 915
+    },
+    {
+      "date": "2026-11-23",
+      "time_class": "blitz",
+      "rating": 923
     }
   ],
   "blunders": {
     "per_game": 2.42,
     "by_category": {
-      "hanging": 914,
-      "missed_threat": 413,
-      "missed_tactic": 904,
-      "endgame": 203,
-      "other": 974
+      "hanging": 917,
+      "missed_threat": 417,
+      "missed_tactic": 907,
+      "endgame": 208,
+      "other": 976
     },
-    "with_time_pressure": 188,
+    "with_time_pressure": 192,
     "by_phase": {
-      "opening": 670,
-      "middlegame": 2300,
-      "endgame": 438
+      "opening": 671,
+      "middlegame": 2309,
+      "endgame": 445
     },
-    "mistakes": 2854
+    "mistakes": 2873
   },
   "openings": [
     {
@@ -7171,9 +7206,9 @@
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense Advance Botvinnik Carls Defense",
       "color": "black",
-      "games": 80,
+      "games": 81,
       "win": 42,
-      "draw": 5,
+      "draw": 6,
       "loss": 33,
       "score": 0.556,
       "avg_wp_after_move10": 48.2,
@@ -7192,13 +7227,13 @@
       "family": "Vienna Game",
       "name": "Vienna Game",
       "color": "white",
-      "games": 68,
+      "games": 69,
       "win": 31,
-      "draw": 4,
+      "draw": 5,
       "loss": 33,
-      "score": 0.485,
-      "avg_wp_after_move10": 57.2,
-      "first_blunder_move_avg": 12.9,
+      "score": 0.486,
+      "avg_wp_after_move10": 57.9,
+      "first_blunder_move_avg": 13.6,
       "common_mistakes": [
         {
           "move_no": 24,
@@ -7483,6 +7518,19 @@
       "common_mistakes": []
     },
     {
+      "family": "Scandinavian Defense",
+      "name": "Scandinavian Defense",
+      "color": "white",
+      "games": 14,
+      "win": 5,
+      "draw": 2,
+      "loss": 7,
+      "score": 0.429,
+      "avg_wp_after_move10": 58.0,
+      "first_blunder_move_avg": 13.2,
+      "common_mistakes": []
+    },
+    {
       "family": "Queens Pawn Opening",
       "name": "Queens Pawn Opening Horwitz",
       "color": "black",
@@ -7493,19 +7541,6 @@
       "score": 0.615,
       "avg_wp_after_move10": 46.6,
       "first_blunder_move_avg": 12.4,
-      "common_mistakes": []
-    },
-    {
-      "family": "Scandinavian Defense",
-      "name": "Scandinavian Defense",
-      "color": "white",
-      "games": 13,
-      "win": 4,
-      "draw": 2,
-      "loss": 7,
-      "score": 0.385,
-      "avg_wp_after_move10": 58.1,
-      "first_blunder_move_avg": 13.2,
       "common_mistakes": []
     },
     {
@@ -8182,6 +8217,19 @@
       "common_mistakes": []
     },
     {
+      "family": "English Opening",
+      "name": "English Opening Reversed Sicilian Closed",
+      "color": "black",
+      "games": 3,
+      "win": 0,
+      "draw": 0,
+      "loss": 3,
+      "score": 0.0,
+      "avg_wp_after_move10": 29.9,
+      "first_blunder_move_avg": 10.3,
+      "common_mistakes": []
+    },
+    {
       "family": "Giuoco Piano Game",
       "name": "Giuoco Piano Game Giuoco Pianissimo Italian Four Knights Canal",
       "color": "white",
@@ -8309,6 +8357,19 @@
       "score": 0.667,
       "avg_wp_after_move10": 79.6,
       "first_blunder_move_avg": 7.0,
+      "common_mistakes": []
+    },
+    {
+      "family": "Vienna Game",
+      "name": "Vienna Game Max Lange Vienna Gambit",
+      "color": "white",
+      "games": 3,
+      "win": 2,
+      "draw": 0,
+      "loss": 1,
+      "score": 0.667,
+      "avg_wp_after_move10": 50.7,
+      "first_blunder_move_avg": 10.0,
       "common_mistakes": []
     },
     {
@@ -8452,19 +8513,6 @@
       "score": 0.5,
       "avg_wp_after_move10": 8.3,
       "first_blunder_move_avg": 4.5,
-      "common_mistakes": []
-    },
-    {
-      "family": "English Opening",
-      "name": "English Opening Reversed Sicilian Closed",
-      "color": "black",
-      "games": 2,
-      "win": 0,
-      "draw": 0,
-      "loss": 2,
-      "score": 0.0,
-      "avg_wp_after_move10": 21.3,
-      "first_blunder_move_avg": 9.0,
       "common_mistakes": []
     },
     {
@@ -10084,6 +10132,19 @@
     },
     {
       "family": "Slav Defense",
+      "name": "Slav Defense Modern Line",
+      "color": "black",
+      "games": 1,
+      "win": 1,
+      "draw": 0,
+      "loss": 0,
+      "score": 1.0,
+      "avg_wp_after_move10": 51.7,
+      "first_blunder_move_avg": null,
+      "common_mistakes": []
+    },
+    {
+      "family": "Slav Defense",
       "name": "Slav Defense Modern Quiet Schallopp Defense",
       "color": "black",
       "games": 1,
@@ -10145,19 +10206,6 @@
       "score": 0.0,
       "avg_wp_after_move10": 49.4,
       "first_blunder_move_avg": 28.0,
-      "common_mistakes": []
-    },
-    {
-      "family": "Vienna Game",
-      "name": "Vienna Game Max Lange Vienna Gambit",
-      "color": "white",
-      "games": 1,
-      "win": 1,
-      "draw": 0,
-      "loss": 0,
-      "score": 1.0,
-      "avg_wp_after_move10": 50.6,
-      "first_blunder_move_avg": null,
       "common_mistakes": []
     }
   ]
