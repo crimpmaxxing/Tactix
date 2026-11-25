@@ -1,13 +1,13 @@
 {
-  "generated": "2026-11-25T12:01:26+08:00",
+  "generated": "2026-11-25T22:03:54+08:00",
   "username": "LHTN27",
   "totals": {
-    "games": 1415,
-    "blitz": 674,
+    "games": 1421,
+    "blitz": 680,
     "rapid": 741,
-    "win": 726,
+    "win": 730,
     "draw": 86,
-    "loss": 603
+    "loss": 605
   },
   "rating_history": [
     {
@@ -7084,36 +7084,66 @@
       "date": "2026-11-23",
       "time_class": "blitz",
       "rating": 923
+    },
+    {
+      "date": "2026-11-25",
+      "time_class": "blitz",
+      "rating": 931
+    },
+    {
+      "date": "2026-11-25",
+      "time_class": "blitz",
+      "rating": 923
+    },
+    {
+      "date": "2026-11-25",
+      "time_class": "blitz",
+      "rating": 931
+    },
+    {
+      "date": "2026-11-25",
+      "time_class": "blitz",
+      "rating": 939
+    },
+    {
+      "date": "2026-11-25",
+      "time_class": "blitz",
+      "rating": 931
+    },
+    {
+      "date": "2026-11-25",
+      "time_class": "blitz",
+      "rating": 939
     }
   ],
   "blunders": {
     "per_game": 2.42,
     "by_category": {
-      "hanging": 917,
+      "hanging": 921,
       "missed_threat": 417,
-      "missed_tactic": 907,
+      "missed_tactic": 910,
       "endgame": 208,
-      "other": 976
+      "other": 980
     },
-    "with_time_pressure": 192,
+    "with_time_pressure": 193,
     "by_phase": {
-      "opening": 671,
-      "middlegame": 2309,
-      "endgame": 445
+      "opening": 675,
+      "middlegame": 2315,
+      "endgame": 446
     },
-    "mistakes": 2873
+    "mistakes": 2888
   },
   "openings": [
     {
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense",
       "color": "black",
-      "games": 257,
-      "win": 130,
+      "games": 258,
+      "win": 131,
       "draw": 20,
       "loss": 107,
-      "score": 0.545,
-      "avg_wp_after_move10": 48.0,
+      "score": 0.547,
+      "avg_wp_after_move10": 48.2,
       "first_blunder_move_avg": 12.9,
       "common_mistakes": [
         {
@@ -7690,6 +7720,19 @@
       ]
     },
     {
+      "family": "Kings Pawn Opening",
+      "name": "Kings Pawn Opening",
+      "color": "white",
+      "games": 8,
+      "win": 5,
+      "draw": 0,
+      "loss": 3,
+      "score": 0.625,
+      "avg_wp_after_move10": 79.4,
+      "first_blunder_move_avg": 15.6,
+      "common_mistakes": []
+    },
+    {
       "family": "Alekhines Defense",
       "name": "Alekhines Defense Scandinavian Variation",
       "color": "white",
@@ -7713,19 +7756,6 @@
       "score": 0.714,
       "avg_wp_after_move10": 54.0,
       "first_blunder_move_avg": 11.2,
-      "common_mistakes": []
-    },
-    {
-      "family": "Kings Pawn Opening",
-      "name": "Kings Pawn Opening",
-      "color": "white",
-      "games": 7,
-      "win": 4,
-      "draw": 0,
-      "loss": 3,
-      "score": 0.571,
-      "avg_wp_after_move10": 80.5,
-      "first_blunder_move_avg": 14.3,
       "common_mistakes": []
     },
     {
@@ -7925,6 +7955,19 @@
       "score": 0.4,
       "avg_wp_after_move10": 64.0,
       "first_blunder_move_avg": 7.4,
+      "common_mistakes": []
+    },
+    {
+      "family": "Vienna Game",
+      "name": "Vienna Game Max Lange Vienna Gambit",
+      "color": "white",
+      "games": 5,
+      "win": 4,
+      "draw": 0,
+      "loss": 1,
+      "score": 0.8,
+      "avg_wp_after_move10": 58.8,
+      "first_blunder_move_avg": 9.0,
       "common_mistakes": []
     },
     {
@@ -8218,6 +8261,19 @@
     },
     {
       "family": "English Opening",
+      "name": "English Opening Kings English Variation",
+      "color": "black",
+      "games": 3,
+      "win": 1,
+      "draw": 0,
+      "loss": 2,
+      "score": 0.333,
+      "avg_wp_after_move10": 21.9,
+      "first_blunder_move_avg": 5.0,
+      "common_mistakes": []
+    },
+    {
+      "family": "English Opening",
       "name": "English Opening Reversed Sicilian Closed",
       "color": "black",
       "games": 3,
@@ -8360,19 +8416,6 @@
       "common_mistakes": []
     },
     {
-      "family": "Vienna Game",
-      "name": "Vienna Game Max Lange Vienna Gambit",
-      "color": "white",
-      "games": 3,
-      "win": 2,
-      "draw": 0,
-      "loss": 1,
-      "score": 0.667,
-      "avg_wp_after_move10": 50.7,
-      "first_blunder_move_avg": 10.0,
-      "common_mistakes": []
-    },
-    {
       "family": "Caro Kann Defense",
       "name": "Caro Kann Defense Advance Botvinnik Carls Defense",
       "color": "white",
@@ -8500,19 +8543,6 @@
       "score": 0.5,
       "avg_wp_after_move10": 55.7,
       "first_blunder_move_avg": 14.0,
-      "common_mistakes": []
-    },
-    {
-      "family": "English Opening",
-      "name": "English Opening Kings English Variation",
-      "color": "black",
-      "games": 2,
-      "win": 1,
-      "draw": 0,
-      "loss": 1,
-      "score": 0.5,
-      "avg_wp_after_move10": 8.3,
-      "first_blunder_move_avg": 4.5,
       "common_mistakes": []
     },
     {
@@ -9205,6 +9235,19 @@
       "score": 0.0,
       "avg_wp_after_move10": 46.8,
       "first_blunder_move_avg": null,
+      "common_mistakes": []
+    },
+    {
+      "family": "Colle System",
+      "name": "Colle System",
+      "color": "black",
+      "games": 1,
+      "win": 0,
+      "draw": 0,
+      "loss": 1,
+      "score": 0.0,
+      "avg_wp_after_move10": 7.8,
+      "first_blunder_move_avg": 10.0,
       "common_mistakes": []
     },
     {
